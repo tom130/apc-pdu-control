@@ -7,6 +7,20 @@ Complete web-based control system for APC Switched Rack PDUs with real-time moni
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
+## 📸 Screenshots
+
+### Dashboard - Dark Mode
+![Dashboard Dark Mode](docs/screenshots/dashboard-dark.png)
+*Modern dark theme interface with system health metrics and real-time PDU status monitoring*
+
+### Outlet Control Panel
+![Outlet Control](docs/screenshots/outlet-control.png)
+*Compact outlet cards with circular power buttons, device names prominently displayed, and visual power state indicators*
+
+### Settings & Configuration
+![Settings Page](docs/screenshots/settings.png)
+*PDU configuration interface with SNMP settings and system-wide configuration options*
+
 ## 🎨 Modern Interface
 
 The APC PDU Control System features a sleek, modern interface designed for efficiency and ease of use:
