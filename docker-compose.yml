@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: apc-pdu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: apc_pdu
+      POSTGRES_USER: apc_user
+      POSTGRES_PASSWORD: apc_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apc_user -d apc_pdu"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - apc-pdu-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: apc-pdu-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://apc_user:apc_password@postgres:5432/apc_pdu
+      LOG_LEVEL: debug
+      CORS_ORIGIN: http://localhost:5173
+      # SNMP Configuration
+      SNMP_TIMEOUT: 5000
+      SNMP_RETRIES: 3
+      # State Management
+      STATE_RECONCILIATION_INTERVAL: 30000
+      PDU_POLLING_INTERVAL: 10000
+      REBOOT_DETECTION_THRESHOLD: 5
+      # Encryption key (32 characters)
+      ENCRYPTION_KEY: "ThisIsA32CharacterEncryptionKey!"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src:ro
+      - ./backend/package.json:/app/package.json:ro
+      - ./backend/tsconfig.json:/app/tsconfig.json:ro
+    networks:
+      - apc-pdu-network
+
+  frontend:
+    image: node:20-alpine
+    container_name: apc-pdu-frontend
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3001/api
+      VITE_WS_URL: ws://localhost:3001/ws
+    volumes:
+      - ./frontend:/app
+    networks:
+      - apc-pdu-network
+    depends_on:
+      - backend
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: apc-pdu-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - apc-pdu-network
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+networks:
+  apc-pdu-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  pgadmin_data:
