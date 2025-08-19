@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, RefreshCw, Settings } from 'lucide-react';
@@ -6,13 +6,15 @@ import { Button } from '@/components/ui/button';
 import { OutletGrid } from '@/components/pdu/OutletGrid';
 import { PowerMetricsChart } from '@/components/pdu/PowerMetricsChart';
 import { PDUInfo } from '@/components/pdu/PDUInfo';
+import { PDUConfigDialog } from '@/components/pdu/PDUConfigDialog';
 import { pduApi } from '@/api/pdu';
 import usePDUStore from '@/store/pduStore';
 
 export function PDUDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getPduById, setOutlets, outlets } = usePDUStore();
+  const { getPduById, setOutlets, outlets, updatePdu } = usePDUStore();
+  const [configDialogOpen, setConfigDialogOpen] = useState(false);
   
   const pdu = id ? getPduById(id) : undefined;
   const pduOutlets = id ? outlets[id] || [] : [];
@@ -55,6 +57,14 @@ export function PDUDetail() {
     refetchOutlets();
   };
 
+  const handleConfigSuccess = async () => {
+    // Refresh the PDU data after successful update
+    if (id) {
+      const updatedPdu = await pduApi.getPDU(id);
+      updatePdu(id, updatedPdu);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -76,7 +86,7 @@ export function PDUDetail() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Reconcile State
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => setConfigDialogOpen(true)}>
             <Settings className="h-4 w-4 mr-2" />
             Configure
           </Button>
@@ -92,6 +102,15 @@ export function PDUDetail() {
           {metricsData && <PowerMetricsChart metrics={metricsData} />}
         </div>
       </div>
+
+      {pdu && (
+        <PDUConfigDialog
+          pdu={pdu}
+          open={configDialogOpen}
+          onOpenChange={setConfigDialogOpen}
+          onSuccess={handleConfigSuccess}
+        />
+      )}
     </div>
   );
 }

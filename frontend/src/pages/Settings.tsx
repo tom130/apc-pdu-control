@@ -9,6 +9,7 @@ import { Plus, Trash2, TestTube, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import usePDUStore from '@/store/pduStore';
 import { pduApi } from '@/api/pdu';
+import type { SecurityLevel } from '@/types/pdu';
 
 export function Settings() {
   const { pdus, pollingInterval, setPollingInterval, setPdus } = usePDUStore();
@@ -25,7 +26,7 @@ export function Settings() {
     snmpAuthPassphrase: '',
     snmpPrivProtocol: 'AES',
     snmpPrivPassphrase: '',
-    snmpSecurityLevel: 'noAuthNoPriv',  // Default to no auth/priv for APC
+    snmpSecurityLevel: 'noAuthNoPriv' as SecurityLevel,  // Default to no auth/priv for APC
   });
 
   const handleAddPdu = async () => {
@@ -40,7 +41,10 @@ export function Settings() {
 
     setIsLoading(true);
     try {
-      const createdPdu = await pduApi.createPDU(newPdu);
+      const createdPdu = await pduApi.createPDU({
+        ...newPdu,
+        isActive: true,
+      });
       
       // Refresh PDU list
       const updatedPdus = await pduApi.getPDUs();
@@ -62,7 +66,7 @@ export function Settings() {
         snmpAuthPassphrase: '',
         snmpPrivProtocol: 'AES',
         snmpPrivPassphrase: '',
-        snmpSecurityLevel: 'noAuthNoPriv',
+        snmpSecurityLevel: 'noAuthNoPriv' as SecurityLevel,
       });
     } catch (error: any) {
       toast({
@@ -108,7 +112,11 @@ export function Settings() {
     try {
       // First create a temporary PDU to get an ID
       const tempName = newPdu.name || `Test-${Date.now()}`;
-      const tempPdu = await pduApi.createPDU({ ...newPdu, name: tempName });
+      const tempPdu = await pduApi.createPDU({ 
+        ...newPdu, 
+        name: tempName,
+        isActive: true,
+      });
       
       // Test the connection
       const result = await pduApi.testPDUConnection(tempPdu.id);
@@ -221,7 +229,7 @@ export function Settings() {
               <Label htmlFor="securityLevel">Security Level</Label>
               <Select
                 value={newPdu.snmpSecurityLevel}
-                onValueChange={(value) => setNewPdu({ ...newPdu, snmpSecurityLevel: value })}
+                onValueChange={(value) => setNewPdu({ ...newPdu, snmpSecurityLevel: value as SecurityLevel })}
               >
                 <SelectTrigger id="securityLevel">
                   <SelectValue />

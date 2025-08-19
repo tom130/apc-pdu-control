@@ -7,6 +7,25 @@ Complete web-based control system for APC Switched Rack PDUs with real-time moni
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
+## 🎨 Modern Interface
+
+The APC PDU Control System features a sleek, modern interface designed for efficiency and ease of use:
+
+### Key Interface Features
+- **🌓 Dark Mode Support**: Automatic theme detection with manual toggle
+- **📱 Responsive Design**: Adapts from mobile (2 columns) to desktop (6 columns)
+- **🔍 Smart Search**: Real-time outlet filtering by name or number
+- **⚡ Visual Power States**: Color-coded outlets with animated status indicators
+- **✨ Modern Aesthetics**: Glass-morphism effects with smooth animations
+
+### Outlet Control Interface
+The main control panel displays all outlets in a compact grid layout:
+- **Green outlets** indicate powered-on state with lightning bolt icons
+- **Gray outlets** show powered-off state
+- **Device names** are prominently displayed (e.g., "NAS", "UDM", "RPI 5")
+- **Quick actions** include individual power toggle and reboot buttons
+- **Bulk operations** support selecting multiple outlets for group control
+
 ## 🚀 Features
 
 ### Core Functionality
@@ -18,6 +37,16 @@ Complete web-based control system for APC Switched Rack PDUs with real-time moni
 - **WebSocket Updates**: Real-time state changes across all connected clients
 - **Scheduled Operations**: Schedule outlet operations for future execution
 - **Event Logging**: Comprehensive event history with export capabilities
+- **PDU Configuration**: Edit PDU settings through intuitive dialog interface
+
+### User Experience
+- **Dark/Light Theme**: System-aware theme with manual override
+- **Keyboard Shortcuts**: Efficient navigation and control
+- **Search & Filter**: Quick outlet discovery with real-time search
+- **Bulk Selection**: Select all/deselect all for efficient management
+- **Visual Feedback**: Animated transitions and hover effects
+- **Critical Outlet Protection**: Visual warnings and disabled controls for protected outlets
+- **State Mismatch Indicators**: Clear visual cues when desired state differs from actual
 
 ### Supported PDU Models
 - **AP7951**: 1G PDU with 24 outlets, SNMPv1, power monitoring supported
@@ -39,6 +68,8 @@ Complete web-based control system for APC Switched Rack PDUs with real-time moni
 - **UI Components**: shadcn/ui with Tailwind CSS
 - **State Management**: Zustand
 - **API Client**: React Query
+- **Icons**: Lucide React
+- **Theme Management**: Context API with localStorage persistence
 
 ## 📦 Prerequisites
 
@@ -90,6 +121,28 @@ make dev
 
 This will start both frontend and backend in development mode with hot reloading.
 
+## 💻 User Interface Guide
+
+### Main Control Panel
+The outlet control grid provides an at-a-glance view of all PDU outlets:
+- **Compact Cards**: Each outlet displays name, number, power state, and controls
+- **Visual States**: Green for ON (with lightning icon), Gray for OFF
+- **Quick Actions**: One-click power toggle and reboot per outlet
+- **Bulk Operations**: Select multiple outlets for group control
+
+### Navigation
+- **Dashboard**: System overview with health metrics and recent events
+- **PDU Details**: Individual PDU control and real-time power monitoring
+- **Events**: Complete event history with filtering and export
+- **Settings**: PDU configuration and system preferences
+
+### Power Monitoring Display
+Real-time power metrics shown in the sidebar:
+- Current draw in Amperes
+- Power consumption in Watts (calculated at 230V EU standard)
+- Visual gauge showing load percentage
+- Load state indicator (NORMAL/WARNING/CRITICAL)
+
 ## 📁 Project Structure
 
 ```
@@ -106,6 +159,7 @@ apc-pdu-control/
 │   ├── src/            # Source code
 │   │   ├── components/ # React components
 │   │   ├── pages/      # Page components
+│   │   ├── providers/  # Context providers
 │   │   └── api/        # API client
 │   └── package.json    # Frontend dependencies
 │
