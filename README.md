@@ -7,7 +7,7 @@ Complete web-based control system for APC Switched Rack PDUs with real-time moni
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-## 📸 Screenshots
+## Screenshots
 
 ### Dashboard - Dark Mode
 ![Dashboard Dark Mode](docs/screenshots/dashboard-dark.png)
@@ -40,7 +40,7 @@ The main control panel displays all outlets in a compact grid layout:
 - **Quick actions** include individual power toggle and reboot buttons
 - **Bulk operations** support selecting multiple outlets for group control
 
-## 🚀 Features
+## Features
 
 ### Core Functionality
 - **Multi-Protocol SNMP Support**: SNMPv1, SNMPv2c, and SNMPv3 with various security levels
@@ -93,7 +93,7 @@ The main control panel displays all outlets in a compact grid layout:
   - PostgreSQL 16+
   - net-snmp utilities
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Using Docker (Recommended)
 
@@ -135,7 +135,7 @@ make dev
 
 This will start both frontend and backend in development mode with hot reloading.
 
-## 💻 User Interface Guide
+## User Interface Guide
 
 ### Main Control Panel
 The outlet control grid provides an at-a-glance view of all PDU outlets:
@@ -216,7 +216,7 @@ Example display: `1.3 A / 299 W`
 
 **Note**: Some older PDU models may not support power monitoring via SNMP.
 
-## 🛠️ Available Commands
+## Available Commands
 
 ```bash
 # Development
@@ -236,7 +236,7 @@ make pgadmin      # Start pgAdmin interface
 make test-power   # Test power metrics endpoint
 ```
 
-## 🔌 API Documentation
+## API Documentation
 
 The backend provides a comprehensive REST API with Swagger documentation:
 
@@ -249,7 +249,7 @@ Main endpoints:
 - `/api/pdus/:id/metrics` - Power metrics
 - `/api/system/health` - System health
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### SNMP Connection Issues
 ```bash
@@ -271,14 +271,6 @@ snmpwalk -v3 -u <user> -l noAuthNoPriv <pdu-ip>
 curl -X POST http://localhost:3001/api/pdus/<pdu-id>/reconcile
 ```
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
 ## 📄 License
 
 MIT License - see LICENSE file for details
@@ -287,14 +279,6 @@ MIT License - see LICENSE file for details
 
 - Original PHP implementation by [Roberto Di Sisto](https://github.com/disisto/apc-switched-rack-pdu-control-panel)
 - SNMP library reference from [apc-pdu-snmp](https://github.com/phillipsnick/apc-pdu-snmp)
-
-## 📞 Support
-
-For issues and questions:
-- Create an issue on GitHub
-- Check existing issues for solutions
-- Review the troubleshooting section
-
 ---
 
 **Note**: This system is designed for managing APC Switched Rack PDUs in a controlled environment. Always ensure proper network security when exposing SNMP-enabled devices.
