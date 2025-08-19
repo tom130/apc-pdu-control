@@ -26,6 +26,7 @@ interface PDUState {
   setOutlets: (pduId: string, outlets: Outlet[]) => void;
   updateOutlet: (pduId: string, outletId: string, updates: Partial<Outlet>) => void;
   setDesiredState: (pduId: string, outletId: string, state: 'on' | 'off' | 'reboot') => void;
+  reorderOutlets: (pduId: string, outlets: Outlet[]) => void;
   
   addEvent: (event: PDUEvent) => void;
   clearEvents: (pduId?: string) => void;
@@ -101,6 +102,10 @@ const usePDUStore = create<PDUState>()(
           const state = get();
           state.updateOutlet(pduId, outletId, { desiredState });
         },
+        
+        reorderOutlets: (pduId, outlets) => set((state) => ({
+          outlets: { ...state.outlets, [pduId]: outlets }
+        })),
         
         // Event Actions
         addEvent: (event) => set((state) => ({

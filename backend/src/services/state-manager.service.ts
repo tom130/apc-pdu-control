@@ -2,17 +2,26 @@ import { eq, and, ne, isNotNull, gte } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { PDU, Outlet, outlets, outletStateHistory, pduEvents } from '../db/schema';
 import { SNMPService } from './snmp.service';
+import { PrometheusService } from './prometheus.service';
 import { OutletState, ChangeType } from '../utils/constants';
 import { logger } from '../utils/logger';
 import { WebSocketService } from './websocket.service';
 
 export class StateManager {
   private wsService: WebSocketService | null = null;
+  private prometheusService: PrometheusService | null = null;
 
   constructor(
     private db: PostgresJsDatabase<any>,
     private snmpService: SNMPService
   ) {}
+  
+  private getPrometheusService(): PrometheusService {
+    if (!this.prometheusService) {
+      this.prometheusService = PrometheusService.getInstance();
+    }
+    return this.prometheusService;
+  }
 
   setWebSocketService(wsService: WebSocketService) {
     this.wsService = wsService;
@@ -79,6 +88,15 @@ export class StateManager {
         outlet.desiredState,
         'sync',
         'system'
+      );
+      
+      // Record Prometheus metric
+      this.getPrometheusService().recordStateChange(
+        pdu,
+        outlet,
+        'sync',
+        outlet.actualState || 'unknown',
+        outlet.desiredState
       );
 
       // Emit WebSocket event
@@ -253,6 +271,8 @@ export class StateManager {
       if (outlet) {
         // Check if state changed
         if (outlet.actualState !== newState) {
+          const previousState = outlet.actualState;
+          
           // Update the state
           await this.db
             .update(outlets)
@@ -262,6 +282,15 @@ export class StateManager {
               updatedAt: new Date(),
             })
             .where(eq(outlets.id, outlet.id));
+          
+          // Record state change in Prometheus
+          this.getPrometheusService().recordStateChange(
+            pdu,
+            outlet,
+            'auto_recovery',
+            previousState || 'unknown',
+            newState
+          );
 
           // Check for state skew
           if (outlet.desiredState && outlet.desiredState !== newState) {
@@ -289,6 +318,7 @@ export class StateManager {
           pduId: pdu.id,
           outletNumber,
           name: state.name || `Outlet ${outletNumber}`,
+          displayOrder: outletNumber, // Set initial display order to match outlet number
           actualState: newState,
           lastStateChange: new Date(),
         });

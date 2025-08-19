@@ -135,6 +135,21 @@ class PDUApiClient {
     return response.data;
   }
 
+  async reorderOutlets(pduId: string, outletIds: string[]): Promise<Outlet[]> {
+    const response = await this.client.put<Outlet[]>(
+      `/pdus/${pduId}/outlets/reorder`,
+      { outletIds }
+    );
+    return response.data;
+  }
+
+  async resetOutletOrder(pduId: string): Promise<Outlet[]> {
+    const response = await this.client.put<Outlet[]>(
+      `/pdus/${pduId}/outlets/reset-order`
+    );
+    return response.data;
+  }
+
   // State History
   async getOutletHistory(
     pduId: string,

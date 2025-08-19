@@ -249,6 +249,88 @@ Main endpoints:
 - `/api/pdus/:id/metrics` - Power metrics
 - `/api/system/health` - System health
 
+## 📈 Prometheus Metrics
+
+The system exposes Prometheus-compatible metrics for comprehensive monitoring and alerting.
+
+### Metrics Endpoint
+- **URL**: http://localhost:3001/metrics
+- **Format**: Prometheus text format
+
+### Available Metrics
+
+#### Power Metrics (Gauges)
+- `pdu_power_draw_amperes` - Current power draw in Amperes
+- `pdu_power_consumption_watts` - Current power consumption in Watts
+- `pdu_voltage_volts` - Current voltage (230V EU standard)
+- `pdu_load_state` - Load state (0=normal, 1=low, 2=near_overload, 3=overload)
+
+#### Outlet Metrics (Gauges)
+- `pdu_outlet_state` - Outlet power state (0=off, 1=on, 2=reboot)
+
+#### PDU Status Metrics (Gauges)
+- `pdu_status` - PDU online status (0=offline, 1=online)
+- `pdu_last_seen_timestamp` - Last seen timestamp (Unix seconds)
+
+#### System Metrics (Counters/Histograms)
+- `pdu_state_changes_total` - Total outlet state changes by type
+- `pdu_errors_total` - Total errors by type and operation
+- `pdu_snmp_request_duration_seconds` - SNMP request duration histogram
+- `pdu_poll_duration_seconds` - PDU polling duration histogram
+- `pdu_poll_errors_total` - Total polling errors
+
+All metrics include relevant labels:
+- `pdu_name`, `pdu_id`, `pdu_ip` - PDU identification
+- `outlet_name`, `outlet_number` - Outlet identification
+- `change_type`, `from_state`, `to_state` - State change details
+- `error_type`, `operation` - Error context
+
+### Prometheus Configuration
+
+Add this scrape configuration to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'apc-pdu'
+    static_configs:
+      - targets: ['localhost:3001']
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+```
+
+### Grafana Dashboard
+
+Example queries for monitoring:
+
+```promql
+# Current power consumption per PDU
+pdu_power_consumption_watts{pdu_name="Main-PDU"}
+
+# Total power across all PDUs
+sum(pdu_power_consumption_watts)
+
+# Outlet state changes rate
+rate(pdu_state_changes_total[5m])
+
+# PDU availability
+up{job="apc-pdu"}
+
+# SNMP request latency (95th percentile)
+histogram_quantile(0.95, rate(pdu_snmp_request_duration_seconds_bucket[5m]))
+```
+
+### Configuration
+
+Prometheus metrics can be configured via environment variables:
+
+```bash
+# Enable/disable Prometheus metrics
+PROMETHEUS_ENABLED=true
+
+# Collect default Node.js metrics (memory, CPU, etc.)
+PROMETHEUS_DEFAULT_METRICS=true
+```
+
 ## Troubleshooting
 
 ### SNMP Connection Issues

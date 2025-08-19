@@ -3,6 +3,7 @@ import { PDU } from '../db/schema';
 import { SNMP_OIDS, SNMP_COMMANDS, SNMP_STATE_MAP, OutletState, LoadState } from '../utils/constants';
 import { decrypt } from '../utils/crypto';
 import { logger } from '../utils/logger';
+import { PrometheusService } from './prometheus.service';
 
 interface OutletStatus {
   outletNumber: number;
@@ -21,10 +22,18 @@ export class SNMPService {
   private sessions = new Map<string, any>();
   private timeout: number;
   private retries: number;
+  private prometheusService: PrometheusService | null = null;
 
   constructor() {
     this.timeout = parseInt(process.env.SNMP_TIMEOUT || '5000');
     this.retries = parseInt(process.env.SNMP_RETRIES || '3');
+  }
+  
+  private getPrometheusService(): PrometheusService {
+    if (!this.prometheusService) {
+      this.prometheusService = PrometheusService.getInstance();
+    }
+    return this.prometheusService;
   }
 
   private createSession(pdu: PDU, forRead: boolean = false): any {
@@ -150,6 +159,7 @@ export class SNMPService {
   }
 
   async getOutletStates(pdu: PDU): Promise<OutletStatus[]> {
+    const timer = this.getPrometheusService().startSNMPTimer(pdu, 'getOutletStates');
     const session = this.getOrCreateSession(pdu, true); // Use read session
     const outlets: OutletStatus[] = [];
 
@@ -180,13 +190,17 @@ export class SNMPService {
       }
     } catch (error: any) {
       logger.error({ error: error.message || error.toString(), stack: error.stack, pdu: pdu.name }, 'Failed to get outlet states');
+      this.getPrometheusService().recordError(pdu, 'snmp_error', 'getOutletStates');
       throw error;
+    } finally {
+      timer();
     }
 
     return outlets;
   }
 
   async setOutletPower(pdu: PDU, outletNumber: number, state: OutletState): Promise<boolean> {
+    const timer = this.getPrometheusService().startSNMPTimer(pdu, 'setOutletPower');
     const session = this.getOrCreateSession(pdu);
     const value = SNMP_COMMANDS.OUTLET[state.toUpperCase() as keyof typeof SNMP_COMMANDS.OUTLET];
     
@@ -210,17 +224,23 @@ export class SNMPService {
           session.set([varbindOld], (error2: any) => {
             if (error2) {
               logger.error({ error: error2.toString(), pdu: pdu.name, outlet: outletNumber }, 'Failed to set outlet power');
+              this.getPrometheusService().recordError(pdu, 'snmp_error', 'setOutletPower');
+              timer();
               reject(error2);
             } else {
               logger.info({ pdu: pdu.name, outlet: outletNumber, state }, 'Outlet power state changed (using old OID)');
+              timer();
               resolve(true);
             }
           });
         } else if (error) {
           logger.error({ error: error.toString(), pdu: pdu.name, outlet: outletNumber }, 'Failed to set outlet power');
+          this.getPrometheusService().recordError(pdu, 'snmp_error', 'setOutletPower');
+          timer();
           reject(error);
         } else {
           logger.info({ pdu: pdu.name, outlet: outletNumber, state }, 'Outlet power state changed');
+          timer();
           resolve(true);
         }
       });
@@ -256,6 +276,7 @@ export class SNMPService {
   }
 
   async getPowerMetrics(pdu: PDU): Promise<PowerMetrics | null> {
+    const timer = this.getPrometheusService().startSNMPTimer(pdu, 'getPowerMetrics');
     const session = this.getOrCreateSession(pdu, true); // Use read session
     
     // Try indexed OIDs first (works on AP7951 and many 2G PDUs)
@@ -286,6 +307,7 @@ export class SNMPService {
           
           logger.debug({ pdu: pdu.name, amps: powerDrawAmps, watts: powerWatts }, 'Power metrics retrieved (indexed OIDs)');
 
+          timer();
           resolve({
             totalPowerDraw: powerDrawAmps,
             totalPowerWatts: powerWatts,
@@ -307,6 +329,7 @@ export class SNMPService {
               
               logger.debug({ pdu: pdu.name, amps: powerDrawAmps, watts: powerWatts }, 'Power metrics retrieved (non-indexed OIDs)');
 
+              timer();
               resolve({
                 totalPowerDraw: powerDrawAmps,
                 totalPowerWatts: powerWatts,
@@ -320,6 +343,7 @@ export class SNMPService {
                 error2: error2?.message, 
                 pdu: pdu.name 
               }, 'Power metrics not available');
+              timer();
               resolve(null);
             }
           });

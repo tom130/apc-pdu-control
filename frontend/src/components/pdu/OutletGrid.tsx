@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,18 +7,34 @@ import {
   Power, 
   PowerOff, 
   RotateCw, 
-  AlertTriangle, 
-  Shield, 
-  Zap,
   Search,
-  CheckCircle2,
-  Circle
+  GripVertical,
+  RotateCcw,
+  Save,
+  X
 } from 'lucide-react';
 import { Outlet, OutletState } from '@/types/pdu';
-import { cn } from '@/lib/utils';
 import { useMutation } from '@tanstack/react-query';
 import { pduApi } from '@/api/pdu';
 import usePDUStore from '@/store/pduStore';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+} from '@dnd-kit/sortable';
+import { SortableOutletCard } from './SortableOutletCard';
 
 interface OutletGridProps {
   pduId: string;
@@ -29,13 +45,52 @@ interface OutletGridProps {
 export function OutletGrid({ pduId, outlets }: OutletGridProps) {
   const [selectedOutlets, setSelectedOutlets] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
-  const { updateOutlet } = usePDUStore();
+  const [isReorganizing, setIsReorganizing] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [sortedOutlets, setSortedOutlets] = useState(outlets);
+  const { updateOutlet, reorderOutlets } = usePDUStore();
+  
+  // Update sortedOutlets when outlets prop changes
+  useEffect(() => {
+    setSortedOutlets(outlets);
+  }, [outlets]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const powerMutation = useMutation({
     mutationFn: ({ outletId, state }: { outletId: string; state: OutletState }) =>
       pduApi.setOutletPower(pduId, outletId, state),
     onSuccess: (data, variables) => {
       updateOutlet(pduId, variables.outletId, { actualState: data.newState });
+    },
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: (outletIds: string[]) => pduApi.reorderOutlets(pduId, outletIds),
+    onSuccess: (data) => {
+      reorderOutlets(pduId, data);
+      setSortedOutlets(data);
+      setHasChanges(false);
+    },
+  });
+
+  const resetOrderMutation = useMutation({
+    mutationFn: () => pduApi.resetOutletOrder(pduId),
+    onSuccess: (data) => {
+      reorderOutlets(pduId, data);
+      setSortedOutlets(data);
+      setHasChanges(false);
+      setIsReorganizing(false);
     },
   });
 
@@ -73,7 +128,36 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
     }
   };
 
-  const sortedOutlets = [...outlets].sort((a, b) => a.outletNumber - b.outletNumber);
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (over && active.id !== over.id) {
+      setSortedOutlets((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over.id);
+        const newOrder = arrayMove(items, oldIndex, newIndex);
+        setHasChanges(true);
+        return newOrder;
+      });
+    }
+  };
+
+  const saveOrder = () => {
+    const outletIds = sortedOutlets.map(o => o.id);
+    reorderMutation.mutate(outletIds);
+  };
+
+  const cancelReorganize = () => {
+    setSortedOutlets(outlets);
+    setHasChanges(false);
+    setIsReorganizing(false);
+  };
+
   const filteredOutlets = sortedOutlets.filter(outlet => 
     outlet.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     outlet.outletNumber.toString().includes(searchTerm)
@@ -85,7 +169,41 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-2xl">Outlet Control</CardTitle>
-            {selectedOutlets.size > 0 && (
+            {isReorganizing ? (
+              <div className="flex items-center gap-2">
+                {hasChanges && (
+                  <Badge variant="outline" className="text-amber-600 border-amber-600">
+                    Unsaved changes
+                  </Badge>
+                )}
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={saveOrder}
+                  disabled={!hasChanges || reorderMutation.isPending}
+                >
+                  <Save className="h-4 w-4 mr-1" />
+                  Save Order
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => resetOrderMutation.mutate()}
+                  disabled={resetOrderMutation.isPending}
+                >
+                  <RotateCcw className="h-4 w-4 mr-1" />
+                  Reset to Default
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={cancelReorganize}
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Cancel
+                </Button>
+              </div>
+            ) : selectedOutlets.size > 0 ? (
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="font-semibold">
                   {selectedOutlets.size} selected
@@ -116,6 +234,15 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
                   Reboot
                 </Button>
               </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsReorganizing(true)}
+              >
+                <GripVertical className="h-4 w-4 mr-1" />
+                Reorganize
+              </Button>
             )}
           </div>
           
@@ -129,196 +256,62 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
                 className="pl-9"
               />
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleAllSelection}
-            >
-              {selectedOutlets.size === filteredOutlets.length ? 'Deselect All' : 'Select All'}
-            </Button>
+            {!isReorganizing && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleAllSelection}
+              >
+                {selectedOutlets.size === filteredOutlets.length ? 'Deselect All' : 'Select All'}
+              </Button>
+            )}
           </div>
         </div>
       </CardHeader>
       
       <CardContent className="p-4">
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {filteredOutlets.map((outlet) => (
-            <OutletCard
-              key={outlet.id}
-              outlet={outlet}
-              isSelected={selectedOutlets.has(outlet.id)}
-              onToggle={() => handleOutletToggle(outlet)}
-              onReboot={() => handleOutletReboot(outlet)}
-              onSelect={() => toggleOutletSelection(outlet.id)}
-              isLoading={powerMutation.isPending}
-            />
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={filteredOutlets.map(o => o.id)}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {filteredOutlets.map((outlet) => (
+                <SortableOutletCard
+                  key={outlet.id}
+                  outlet={outlet}
+                  isSelected={selectedOutlets.has(outlet.id)}
+                  onToggle={() => handleOutletToggle(outlet)}
+                  onReboot={() => handleOutletReboot(outlet)}
+                  onSelect={() => toggleOutletSelection(outlet.id)}
+                  isLoading={powerMutation.isPending}
+                  isReorganizing={isReorganizing}
+                />
+              ))}
+            </div>
+          </SortableContext>
+          <DragOverlay>
+            {activeId ? (
+              <div className="opacity-80">
+                <SortableOutletCard
+                  outlet={sortedOutlets.find(o => o.id === activeId)!}
+                  isSelected={false}
+                  onToggle={() => {}}
+                  onReboot={() => {}}
+                  onSelect={() => {}}
+                  isLoading={false}
+                  isReorganizing={true}
+                />
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       </CardContent>
     </Card>
-  );
-}
-
-interface OutletCardProps {
-  outlet: Outlet;
-  isSelected: boolean;
-  onToggle: () => void;
-  onReboot: () => void;
-  onSelect: () => void;
-  isLoading: boolean;
-}
-
-function OutletCard({
-  outlet,
-  isSelected,
-  onToggle,
-  onReboot,
-  onSelect,
-  isLoading,
-}: OutletCardProps) {
-  const isOn = outlet.actualState === 'on';
-  const hasSkew = outlet.desiredState && outlet.desiredState !== outlet.actualState;
-
-  return (
-    <div
-      className={cn(
-        "group relative overflow-hidden rounded-lg transition-all duration-300",
-        "bg-gradient-to-br from-card to-card/50",
-        "border",
-        isSelected ? "border-primary shadow-md shadow-primary/20" : "border-border",
-        hasSkew && "border-amber-500 dark:border-amber-400",
-        outlet.isCritical && "border-red-500 dark:border-red-400",
-        "hover:shadow-lg hover:scale-[1.01] hover:border-primary/50"
-      )}
-    >
-      {/* Background gradient based on state */}
-      <div className={cn(
-        "absolute inset-0 opacity-10 transition-opacity duration-300",
-        isOn && "bg-gradient-to-br from-green-500 to-emerald-500 opacity-20",
-        !isOn && "bg-gradient-to-br from-gray-500 to-slate-500"
-      )} />
-      
-      {/* Selection checkbox */}
-      <button
-        onClick={onSelect}
-        className="absolute top-2 right-2 z-10 transition-colors"
-      >
-        {isSelected ? (
-          <CheckCircle2 className="h-4 w-4 text-primary" />
-        ) : (
-          <Circle className="h-4 w-4 text-muted-foreground hover:text-primary" />
-        )}
-      </button>
-
-      {/* Status badges */}
-      <div className="absolute top-2 left-2 flex gap-1 z-10">
-        {outlet.isCritical && (
-          <Badge variant="destructive" className="text-xs px-1.5 py-0">
-            <Shield className="h-2.5 w-2.5" />
-          </Badge>
-        )}
-        {hasSkew && (
-          <Badge variant="warning" className="text-xs px-1.5 py-0">
-            <AlertTriangle className="h-2.5 w-2.5" />
-          </Badge>
-        )}
-      </div>
-
-      <div className="relative p-3 space-y-2">
-        {/* Outlet name and number */}
-        <div className="text-center pt-3">
-          <div className="text-sm font-bold text-foreground/90 truncate">
-            {outlet.name || `Outlet ${outlet.outletNumber}`}
-          </div>
-          <div className="text-xs font-medium text-muted-foreground">
-            #{outlet.outletNumber}
-          </div>
-        </div>
-
-        {/* Power button */}
-        <div className="flex justify-center">
-          <button
-            onClick={onToggle}
-            disabled={isLoading || outlet.isCritical}
-            className={cn(
-              "relative group/btn w-14 h-14 rounded-full transition-all duration-300",
-              "border-2 flex items-center justify-center",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-              isOn ? [
-                "bg-gradient-to-br from-green-500 to-emerald-500",
-                "border-green-400 dark:border-green-600",
-                "hover:from-green-600 hover:to-emerald-600",
-                "shadow-md shadow-green-500/30"
-              ] : [
-                "bg-gradient-to-br from-gray-500 to-slate-600",
-                "border-gray-400 dark:border-gray-600",
-                "hover:from-gray-600 hover:to-slate-700",
-                "shadow-md shadow-gray-500/20"
-              ]
-            )}
-          >
-            <div className={cn(
-              "transition-all duration-300",
-              "group-hover/btn:scale-110"
-            )}>
-              {isOn ? (
-                <Zap className="h-6 w-6 text-white fill-white" />
-              ) : (
-                <Power className="h-6 w-6 text-white" />
-              )}
-            </div>
-            
-            {/* Pulsing ring for ON state */}
-            {isOn && (
-              <div className="absolute inset-0 rounded-full animate-pulse-ring">
-                <div className="absolute inset-0 rounded-full bg-green-400 opacity-20 animate-ping" />
-              </div>
-            )}
-          </button>
-        </div>
-
-        {/* Status text */}
-        <div className="text-center">
-          <div className={cn(
-            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full",
-            "text-xs font-semibold transition-colors",
-            isOn ? [
-              "bg-green-100 text-green-800",
-              "dark:bg-green-900/30 dark:text-green-400"
-            ] : [
-              "bg-gray-100 text-gray-800",
-              "dark:bg-gray-900/30 dark:text-gray-400"
-            ]
-          )}>
-            <div className={cn(
-              "w-1.5 h-1.5 rounded-full",
-              isOn ? "bg-green-500 animate-pulse" : "bg-gray-500"
-            )} />
-            {isOn ? 'ON' : 'OFF'}
-          </div>
-        </div>
-
-        {/* Reboot button */}
-        <Button
-          size="sm"
-          variant="outline"
-          className="w-full text-xs py-1 h-7 group/reboot"
-          onClick={onReboot}
-          disabled={isLoading || outlet.isCritical}
-        >
-          <RotateCw className="h-3 w-3 mr-1 transition-transform group-hover/reboot:rotate-180 duration-500" />
-          Reboot
-        </Button>
-
-        {/* Desired state indicator */}
-        {outlet.desiredState && outlet.desiredState !== outlet.actualState && (
-          <div className="text-center">
-            <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-              Target: {outlet.desiredState.toUpperCase()}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }

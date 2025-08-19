@@ -4,12 +4,14 @@ import { pdus, outlets, powerMetrics, pduEvents } from '../db/schema';
 import { SNMPService } from './snmp.service';
 import { StateManager } from './state-manager.service';
 import { WebSocketService } from './websocket.service';
+import { PrometheusService } from './prometheus.service';
 import { INTERVALS } from '../utils/constants';
 import { logger } from '../utils/logger';
 
 export class SchedulerService {
   private intervals: NodeJS.Timeout[] = [];
   private wsService: WebSocketService;
+  private prometheusService: PrometheusService | null = null;
   private isRunning = false;
 
   constructor(
@@ -19,6 +21,13 @@ export class SchedulerService {
   ) {
     this.wsService = WebSocketService.getInstance();
     this.stateManager.setWebSocketService(this.wsService);
+  }
+  
+  private getPrometheusService(): PrometheusService {
+    if (!this.prometheusService) {
+      this.prometheusService = PrometheusService.getInstance();
+    }
+    return this.prometheusService;
   }
 
   start() {
@@ -84,9 +93,15 @@ export class SchedulerService {
   }
 
   private async pollPDU(pdu: any) {
+    const pollTimer = this.getPrometheusService().startPollTimer(pdu);
+    
     try {
       // Get outlet states from SNMP
       const states = await this.snmpService.getOutletStates(pdu);
+      
+      // Update Prometheus metrics
+      this.getPrometheusService().updateOutletStates(pdu, states);
+      this.getPrometheusService().updatePDUStatus(pdu, 'online');
       
       // Update database
       await this.stateManager.updateOutletStates(pdu, states);
@@ -121,6 +136,11 @@ export class SchedulerService {
     } catch (error: any) {
       logger.error({ error: error.message, pdu: pdu.name }, 'Failed to poll PDU');
       
+      // Update Prometheus metrics
+      this.getPrometheusService().updatePDUStatus(pdu, 'offline');
+      this.getPrometheusService().recordPollError(pdu, error.name || 'unknown');
+      this.getPrometheusService().recordError(pdu, 'connection_lost', 'poll');
+      
       // Mark PDU as offline
       await this.db.insert(pduEvents).values({
         pduId: pdu.id,
@@ -134,6 +154,8 @@ export class SchedulerService {
         status: 'offline',
         error: error.message,
       }, `pdu:${pdu.id}`);
+    } finally {
+      pollTimer();
     }
   }
 
@@ -180,6 +202,9 @@ export class SchedulerService {
           continue;
         }
         
+        // Update Prometheus metrics
+        this.getPrometheusService().updatePowerMetrics(pdu, metrics);
+        
         // Store metrics in database
         await this.db.insert(powerMetrics).values({
           pduId: pdu.id,
@@ -214,6 +239,7 @@ export class SchedulerService {
         }
       } catch (error) {
         logger.error({ error, pdu: pdu.name }, 'Failed to collect metrics');
+        this.getPrometheusService().recordError(pdu, 'metrics_collection_failed', 'collectMetrics');
       }
     }
   }

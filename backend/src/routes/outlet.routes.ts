@@ -11,7 +11,7 @@ export const outletRoutes = new Elysia({ prefix: '/pdus/:pduId/outlets' })
       .select()
       .from(outlets)
       .where(eq(outlets.pduId, params.pduId))
-      .orderBy(outlets.outletNumber);
+      .orderBy(outlets.displayOrder);
     
     return pduOutlets;
   }, {
@@ -238,6 +238,129 @@ export const outletRoutes = new Elysia({ prefix: '/pdus/:pduId/outlets' })
     }),
     query: t.Object({
       limit: t.Optional(t.Number({ minimum: 1, maximum: 100 }))
+    })
+  })
+  
+  .put('/reorder', async ({ params, body, db, set }) => {
+    // Validate that all outlet IDs belong to the specified PDU
+    const existingOutlets = await db
+      .select()
+      .from(outlets)
+      .where(eq(outlets.pduId, params.pduId));
+    
+    const existingIds = new Set(existingOutlets.map(o => o.id));
+    const providedIds = new Set(body.outletIds);
+    
+    // Check if all provided IDs exist
+    for (const id of body.outletIds) {
+      if (!existingIds.has(id)) {
+        set.status = 400;
+        return { error: `Outlet ${id} not found in PDU` };
+      }
+    }
+    
+    // Check if all existing outlets are included
+    if (existingIds.size !== providedIds.size) {
+      set.status = 400;
+      return { error: 'All outlets must be included in reorder operation' };
+    }
+    
+    try {
+      // Update display_order for each outlet in a transaction
+      await db.transaction(async (tx) => {
+        for (let i = 0; i < body.outletIds.length; i++) {
+          await tx
+            .update(outlets)
+            .set({ 
+              displayOrder: i + 1,
+              updatedAt: new Date()
+            })
+            .where(eq(outlets.id, body.outletIds[i]));
+        }
+      });
+      
+      // Fetch and return updated outlets
+      const updatedOutlets = await db
+        .select()
+        .from(outlets)
+        .where(eq(outlets.pduId, params.pduId))
+        .orderBy(outlets.displayOrder);
+      
+      // Broadcast WebSocket event
+      const wsService = WebSocketService.getInstance();
+      wsService.broadcast('outlets:reordered', {
+        pduId: params.pduId,
+        outlets: updatedOutlets
+      });
+      
+      logger.info({
+        pduId: params.pduId,
+        count: body.outletIds.length
+      }, 'Outlets reordered');
+      
+      return updatedOutlets;
+    } catch (error: any) {
+      logger.error({
+        error: error.message,
+        pduId: params.pduId
+      }, 'Failed to reorder outlets');
+      
+      set.status = 500;
+      return {
+        error: 'Failed to reorder outlets',
+        message: error.message
+      };
+    }
+  }, {
+    params: t.Object({
+      pduId: t.String({ format: 'uuid' })
+    }),
+    body: t.Object({
+      outletIds: t.Array(t.String({ format: 'uuid' }))
+    })
+  })
+  
+  .put('/reset-order', async ({ params, db }) => {
+    // Reset display_order to match outlet_number
+    const existingOutlets = await db
+      .select()
+      .from(outlets)
+      .where(eq(outlets.pduId, params.pduId));
+    
+    await db.transaction(async (tx) => {
+      for (const outlet of existingOutlets) {
+        await tx
+          .update(outlets)
+          .set({ 
+            displayOrder: outlet.outletNumber,
+            updatedAt: new Date()
+          })
+          .where(eq(outlets.id, outlet.id));
+      }
+    });
+    
+    // Fetch and return updated outlets
+    const updatedOutlets = await db
+      .select()
+      .from(outlets)
+      .where(eq(outlets.pduId, params.pduId))
+      .orderBy(outlets.displayOrder);
+    
+    // Broadcast WebSocket event
+    const wsService = WebSocketService.getInstance();
+    wsService.broadcast('outlets:reordered', {
+      pduId: params.pduId,
+      outlets: updatedOutlets
+    });
+    
+    logger.info({
+      pduId: params.pduId
+    }, 'Outlet order reset to default');
+    
+    return updatedOutlets;
+  }, {
+    params: t.Object({
+      pduId: t.String({ format: 'uuid' })
     })
   })
   

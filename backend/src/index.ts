@@ -19,6 +19,7 @@ const host = process.env.HOST || '0.0.0.0';
 const snmpService = new SNMPService();
 const stateManager = new StateManager(db, snmpService);
 const schedulerService = new SchedulerService(db, snmpService, stateManager);
+// PrometheusService is a singleton and will be initialized on first use
 
 // Create Elysia app
 const app = new Elysia()
@@ -47,6 +48,31 @@ const app = new Elysia()
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
   }))
+  // Prometheus metrics endpoint (outside /api group)
+  .get('/metrics', async ({ set }) => {
+    try {
+      // Check if Prometheus metrics are enabled
+      if (process.env.PROMETHEUS_ENABLED === 'false') {
+        set.status = 404;
+        return 'Prometheus metrics are disabled';
+      }
+      
+      const { PrometheusService } = await import('./services/prometheus.service');
+      const prometheusService = PrometheusService.getInstance();
+      
+      // Set appropriate content type
+      set.headers['content-type'] = prometheusService.getContentType();
+      
+      // Return metrics in Prometheus format
+      const metrics = await prometheusService.getMetrics();
+      
+      return metrics;
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Failed to generate Prometheus metrics');
+      set.status = 500;
+      return 'Failed to generate metrics';
+    }
+  })
   // API routes
   .group('/api', (app) =>
     app

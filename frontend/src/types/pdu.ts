@@ -26,6 +26,7 @@ export interface Outlet {
   outletNumber: number;
   name?: string;
   description?: string;
+  displayOrder?: number;
   desiredState?: OutletState;
   actualState?: OutletState;
   lastStateChange?: Date;

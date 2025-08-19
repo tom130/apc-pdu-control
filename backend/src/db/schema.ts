@@ -32,6 +32,7 @@ export const outlets = pgTable('outlets', {
   outletNumber: integer('outlet_number').notNull(),
   name: text('name'),
   description: text('description'),
+  displayOrder: integer('display_order'),
   desiredState: text('desired_state'), // 'on', 'off', 'reboot'
   actualState: text('actual_state'), // 'on', 'off', 'reboot'
   lastStateChange: timestamp('last_state_change', { withTimezone: true }),
@@ -45,6 +46,7 @@ export const outlets = pgTable('outlets', {
     pduIdIdx: index('idx_outlets_pdu_id').on(table.pduId),
     desiredStateIdx: index('idx_outlets_desired_state').on(table.desiredState),
     actualStateIdx: index('idx_outlets_actual_state').on(table.actualState),
+    displayOrderIdx: index('idx_outlets_display_order').on(table.pduId, table.displayOrder),
   };
 });
 

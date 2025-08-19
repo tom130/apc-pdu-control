@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS outlets (
     outlet_number INTEGER NOT NULL,
     name VARCHAR(255),
     description TEXT,
+    display_order INTEGER,
     desired_state VARCHAR(10),
     actual_state VARCHAR(10),
     is_critical BOOLEAN DEFAULT false,
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS scheduled_operations (
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_outlets_pdu_id ON outlets(pdu_id);
 CREATE INDEX IF NOT EXISTS idx_outlets_states ON outlets(desired_state, actual_state);
+CREATE INDEX IF NOT EXISTS idx_outlets_display_order ON outlets(pdu_id, display_order);
 CREATE INDEX IF NOT EXISTS idx_power_metrics_pdu_timestamp ON power_metrics(pdu_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_pdu_events_pdu_timestamp ON pdu_events(pdu_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_outlet_history_outlet_timestamp ON outlet_state_history(outlet_id, timestamp DESC);
