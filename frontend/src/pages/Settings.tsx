@@ -20,8 +20,8 @@ export function Settings() {
     name: '',
     ipAddress: '',
     model: '',
-    snmpVersion: 'v3',
-    snmpUser: 'apc',  // Default APC username
+    snmpVersion: 'v1',  // Default to v1 for compatibility
+    snmpUser: 'public',  // Community string for v1/v2c, username for v3
     snmpAuthProtocol: 'SHA',
     snmpAuthPassphrase: '',
     snmpPrivProtocol: 'AES',
@@ -60,8 +60,8 @@ export function Settings() {
         name: '',
         ipAddress: '',
         model: '',
-        snmpVersion: 'v3',
-        snmpUser: 'apc',
+        snmpVersion: 'v1',
+        snmpUser: 'public',
         snmpAuthProtocol: 'SHA',
         snmpAuthPassphrase: '',
         snmpPrivProtocol: 'AES',
@@ -184,7 +184,7 @@ export function Settings() {
         <CardHeader>
           <CardTitle>Add New PDU</CardTitle>
           <CardDescription>
-            Configure a new APC PDU with SNMPv3 credentials
+            Configure a new APC PDU with SNMP credentials
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -217,30 +217,72 @@ export function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="snmpUser">SNMP User</Label>
-              <Input
-                id="snmpUser"
-                value={newPdu.snmpUser}
-                onChange={(e) => setNewPdu({ ...newPdu, snmpUser: e.target.value })}
-                placeholder="Default: apc"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="securityLevel">Security Level</Label>
+              <Label htmlFor="snmpVersion">SNMP Version</Label>
               <Select
-                value={newPdu.snmpSecurityLevel}
-                onValueChange={(value) => setNewPdu({ ...newPdu, snmpSecurityLevel: value as SecurityLevel })}
+                value={newPdu.snmpVersion}
+                onValueChange={(value) => {
+                  setNewPdu({ 
+                    ...newPdu, 
+                    snmpVersion: value,
+                    // Reset community/user based on version
+                    snmpUser: value === 'v3' ? 'apc' : 'public'
+                  });
+                }}
               >
-                <SelectTrigger id="securityLevel">
+                <SelectTrigger id="snmpVersion">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="noAuthNoPriv">No Auth, No Privacy (Default)</SelectItem>
-                  <SelectItem value="authNoPriv">Auth, No Privacy</SelectItem>
-                  <SelectItem value="authPriv">Auth + Privacy</SelectItem>
+                  <SelectItem value="v1">SNMP v1</SelectItem>
+                  <SelectItem value="v2c">SNMP v2c</SelectItem>
+                  <SelectItem value="v3">SNMP v3</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* For v1/v2c: Show community string */}
+            {(newPdu.snmpVersion === 'v1' || newPdu.snmpVersion === 'v2c') && (
+              <div className="space-y-2">
+                <Label htmlFor="community">Community String</Label>
+                <Input
+                  id="community"
+                  value={newPdu.snmpUser}
+                  onChange={(e) => setNewPdu({ ...newPdu, snmpUser: e.target.value })}
+                  placeholder="Default: public (read-only) or private (read-write)"
+                />
+              </div>
+            )}
+
+            {/* For v3: Show username and security options */}
+            {newPdu.snmpVersion === 'v3' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="snmpUser">SNMP Username</Label>
+                  <Input
+                    id="snmpUser"
+                    value={newPdu.snmpUser}
+                    onChange={(e) => setNewPdu({ ...newPdu, snmpUser: e.target.value })}
+                    placeholder="Default: apc"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="securityLevel">Security Level</Label>
+                  <Select
+                    value={newPdu.snmpSecurityLevel}
+                    onValueChange={(value) => setNewPdu({ ...newPdu, snmpSecurityLevel: value as SecurityLevel })}
+                  >
+                    <SelectTrigger id="securityLevel">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="noAuthNoPriv">No Auth, No Privacy</SelectItem>
+                      <SelectItem value="authNoPriv">Auth, No Privacy</SelectItem>
+                      <SelectItem value="authPriv">Auth + Privacy</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
             
             {/* Only show auth fields if auth is required */}
             {(newPdu.snmpSecurityLevel === 'authNoPriv' || newPdu.snmpSecurityLevel === 'authPriv') && (
