@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PDUCard } from '@/components/pdu/PDUCard';
 import { SystemHealthCard } from '@/components/pdu/SystemHealthCard';
 import { RecentEventsCard } from '@/components/pdu/RecentEventsCard';
+import { AddPDUDialog } from '@/components/pdu/AddPDUDialog';
 import { pduApi } from '@/api/pdu';
 import usePDUStore from '@/store/pduStore';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { RefreshCw, Plus } from 'lucide-react';
 
 export function Dashboard() {
   const { setPdus, setSystemHealth, pdus } = usePDUStore();
+  const [addPduDialogOpen, setAddPduDialogOpen] = useState(false);
 
   const { data: pduData, isLoading: pdusLoading, refetch: refetchPdus } = useQuery({
     queryKey: ['pdus'],
@@ -50,7 +52,7 @@ export function Dashboard() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-          <Button>
+          <Button onClick={() => setAddPduDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add PDU
           </Button>
@@ -78,6 +80,14 @@ export function Dashboard() {
           <RecentEventsCard />
         </>
       )}
+
+      <AddPDUDialog
+        open={addPduDialogOpen}
+        onOpenChange={setAddPduDialogOpen}
+        onSuccess={() => {
+          refetchPdus();
+        }}
+      />
     </div>
   );
 }

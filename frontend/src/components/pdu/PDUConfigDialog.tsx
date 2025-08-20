@@ -30,7 +30,8 @@ export function PDUConfigDialog({ pdu, open, onOpenChange, onSuccess }: PDUConfi
     name: pdu.name,
     ipAddress: pdu.ipAddress,
     model: pdu.model || '',
-    snmpUser: pdu.snmpUser || 'apc',
+    snmpVersion: pdu.snmpVersion || 'v1',
+    snmpUser: pdu.snmpUser || 'public', // Community string for v1/v2c, username for v3
     snmpSecurityLevel: (pdu.snmpSecurityLevel || 'noAuthNoPriv') as SecurityLevel,
     snmpAuthProtocol: pdu.snmpAuthProtocol || 'SHA',
     snmpAuthPassphrase: '',
@@ -48,22 +49,25 @@ export function PDUConfigDialog({ pdu, open, onOpenChange, onSuccess }: PDUConfi
       return;
     }
 
-    const securityLevel = formData.snmpSecurityLevel;
-    if ((securityLevel === 'authNoPriv' || securityLevel === 'authPriv') && !formData.snmpAuthPassphrase) {
-      toast({
-        title: 'Validation Error',
-        description: 'Authentication passphrase is required for this security level',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (securityLevel === 'authPriv' && !formData.snmpPrivPassphrase) {
-      toast({
-        title: 'Validation Error',
-        description: 'Privacy passphrase is required for this security level',
-        variant: 'destructive',
-      });
-      return;
+    // Only validate v3 security requirements if using v3
+    if (formData.snmpVersion === 'v3') {
+      const securityLevel = formData.snmpSecurityLevel;
+      if ((securityLevel === 'authNoPriv' || securityLevel === 'authPriv') && !formData.snmpAuthPassphrase) {
+        toast({
+          title: 'Validation Error',
+          description: 'Authentication passphrase is required for this security level',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (securityLevel === 'authPriv' && !formData.snmpPrivPassphrase) {
+        toast({
+          title: 'Validation Error',
+          description: 'Privacy passphrase is required for this security level',
+          variant: 'destructive',
+        });
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -72,11 +76,16 @@ export function PDUConfigDialog({ pdu, open, onOpenChange, onSuccess }: PDUConfi
         name: formData.name,
         ipAddress: formData.ipAddress,
         model: formData.model,
+        snmpVersion: formData.snmpVersion,
         snmpUser: formData.snmpUser,
-        snmpSecurityLevel: formData.snmpSecurityLevel,
-        snmpAuthProtocol: formData.snmpAuthProtocol,
-        snmpPrivProtocol: formData.snmpPrivProtocol,
       };
+
+      // Only include v3 specific fields if using v3
+      if (formData.snmpVersion === 'v3') {
+        updateData.snmpSecurityLevel = formData.snmpSecurityLevel;
+        updateData.snmpAuthProtocol = formData.snmpAuthProtocol;
+        updateData.snmpPrivProtocol = formData.snmpPrivProtocol;
+      }
 
       if (formData.snmpAuthPassphrase) {
         updateData.snmpAuthPassphrase = formData.snmpAuthPassphrase;
@@ -147,32 +156,77 @@ export function PDUConfigDialog({ pdu, open, onOpenChange, onSuccess }: PDUConfi
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="snmpUser">SNMP User</Label>
-              <Input
-                id="snmpUser"
-                value={formData.snmpUser}
-                onChange={(e) => setFormData({ ...formData, snmpUser: e.target.value })}
-                placeholder="Default: apc"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="securityLevel">Security Level</Label>
+              <Label htmlFor="snmpVersion">SNMP Version</Label>
               <Select
-                value={formData.snmpSecurityLevel}
-                onValueChange={(value) => setFormData({ ...formData, snmpSecurityLevel: value as SecurityLevel })}
+                value={formData.snmpVersion}
+                onValueChange={(value) => {
+                  setFormData({ 
+                    ...formData, 
+                    snmpVersion: value,
+                    // Reset community/user based on version
+                    snmpUser: value === 'v3' ? 'apc' : 'public'
+                  });
+                }}
               >
-                <SelectTrigger id="securityLevel">
+                <SelectTrigger id="snmpVersion">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="noAuthNoPriv">No Auth, No Privacy</SelectItem>
-                  <SelectItem value="authNoPriv">Auth, No Privacy</SelectItem>
-                  <SelectItem value="authPriv">Auth + Privacy</SelectItem>
+                  <SelectItem value="v1">SNMP v1</SelectItem>
+                  <SelectItem value="v2c">SNMP v2c</SelectItem>
+                  <SelectItem value="v3">SNMP v3</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* For v1/v2c: Show community string */}
+            {(formData.snmpVersion === 'v1' || formData.snmpVersion === 'v2c') && (
+              <div className="space-y-2">
+                <Label htmlFor="community">Community String</Label>
+                <Input
+                  id="community"
+                  value={formData.snmpUser}
+                  onChange={(e) => setFormData({ ...formData, snmpUser: e.target.value })}
+                  placeholder="Default: public (read-only) or private (read-write)"
+                />
+                <p className="text-xs text-muted-foreground col-span-2">
+                  Most APC PDUs use 'public' for read access and 'private' for write access
+                </p>
+              </div>
+            )}
+
+            {/* For v3: Show username and security options */}
+            {formData.snmpVersion === 'v3' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="snmpUser">SNMP Username</Label>
+                  <Input
+                    id="snmpUser"
+                    value={formData.snmpUser}
+                    onChange={(e) => setFormData({ ...formData, snmpUser: e.target.value })}
+                    placeholder="Default: apc"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="securityLevel">Security Level</Label>
+                  <Select
+                    value={formData.snmpSecurityLevel}
+                    onValueChange={(value) => setFormData({ ...formData, snmpSecurityLevel: value as SecurityLevel })}
+                  >
+                    <SelectTrigger id="securityLevel">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="noAuthNoPriv">No Auth, No Privacy</SelectItem>
+                      <SelectItem value="authNoPriv">Auth, No Privacy</SelectItem>
+                      <SelectItem value="authPriv">Auth + Privacy</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
             
-            {(formData.snmpSecurityLevel === 'authNoPriv' || formData.snmpSecurityLevel === 'authPriv') && (
+            {formData.snmpVersion === 'v3' && (formData.snmpSecurityLevel === 'authNoPriv' || formData.snmpSecurityLevel === 'authPriv') && (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="authProtocol">Auth Protocol</Label>
@@ -202,7 +256,7 @@ export function PDUConfigDialog({ pdu, open, onOpenChange, onSuccess }: PDUConfi
               </>
             )}
             
-            {formData.snmpSecurityLevel === 'authPriv' && (
+            {formData.snmpVersion === 'v3' && formData.snmpSecurityLevel === 'authPriv' && (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="privProtocol">Privacy Protocol</Label>
