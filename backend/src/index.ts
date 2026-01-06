@@ -6,6 +6,8 @@ import { pduRoutes } from './routes/pdu.routes';
 import { outletRoutes } from './routes/outlet.routes';
 import { metricsRoutes } from './routes/metrics.routes';
 import { systemRoutes } from './routes/system.routes';
+import { apiKeysRoutes } from './routes/api-keys.routes';
+import { m2mRoutes } from './routes/m2m.routes';
 import { websocketHandler } from './services/websocket.service';
 import { SchedulerService } from './services/scheduler.service';
 import { SNMPService } from './services/snmp.service';
@@ -80,7 +82,10 @@ const app = new Elysia()
       .use(outletRoutes)
       .use(metricsRoutes)
       .use(systemRoutes)
+      .use(apiKeysRoutes)
   )
+  // M2M API routes (with authentication)
+  .use(m2mRoutes)
   // Error handling
   .onError(({ code, error, set }) => {
     logger.error({ code, error: error.message }, 'Request error');

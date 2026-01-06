@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, TestTube, Loader2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Plus, Trash2, TestTube, Loader2, Key, Copy, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import usePDUStore from '@/store/pduStore';
 import { pduApi } from '@/api/pdu';
-import type { SecurityLevel } from '@/types/pdu';
+import type { SecurityLevel, ApiKey } from '@/types/pdu';
 
 export function Settings() {
   const { pdus, pollingInterval, setPollingInterval, setPdus } = usePDUStore();
@@ -28,6 +29,26 @@ export function Settings() {
     snmpPrivPassphrase: '',
     snmpSecurityLevel: 'noAuthNoPriv' as SecurityLevel,  // Default to no auth/priv for APC
   });
+
+  // API Keys state
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [isCreatingKey, setIsCreatingKey] = useState(false);
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
+  const [showNewKey, setShowNewKey] = useState(false);
+
+  // Fetch API keys on mount
+  useEffect(() => {
+    const fetchApiKeys = async () => {
+      try {
+        const keys = await pduApi.getApiKeys();
+        setApiKeys(keys);
+      } catch (error) {
+        console.error('Failed to fetch API keys:', error);
+      }
+    };
+    fetchApiKeys();
+  }, []);
 
   const handleAddPdu = async () => {
     if (!newPdu.name || !newPdu.ipAddress) {
@@ -153,11 +174,11 @@ export function Settings() {
   const handleDeletePdu = async (id: string) => {
     try {
       await pduApi.deletePDU(id);
-      
+
       // Refresh PDU list
       const updatedPdus = await pduApi.getPDUs();
       setPdus(updatedPdus);
-      
+
       toast({
         title: 'Success',
         description: 'PDU deleted successfully',
@@ -169,6 +190,81 @@ export function Settings() {
         variant: 'destructive',
       });
     }
+  };
+
+  // API Key handlers
+  const handleCreateApiKey = async () => {
+    if (!newKeyName.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Key name is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsCreatingKey(true);
+    try {
+      const created = await pduApi.createApiKey(newKeyName);
+      setApiKeys([...apiKeys, created]);
+      setNewlyCreatedKey(created.key || null);
+      setNewKeyName('');
+      setShowNewKey(true);
+      toast({
+        title: 'Success',
+        description: `API key "${created.name}" created. Copy it now - it won't be shown again!`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to create API key',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCreatingKey(false);
+    }
+  };
+
+  const handleToggleApiKey = async (id: string, isActive: boolean) => {
+    try {
+      const updated = await pduApi.updateApiKey(id, { isActive });
+      setApiKeys(apiKeys.map(k => k.id === id ? updated : k));
+      toast({
+        title: 'Success',
+        description: `API key ${isActive ? 'enabled' : 'disabled'}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to update API key',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDeleteApiKey = async (id: string) => {
+    try {
+      await pduApi.deleteApiKey(id);
+      setApiKeys(apiKeys.filter(k => k.id !== id));
+      toast({
+        title: 'Success',
+        description: 'API key deleted',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to delete API key',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: 'Copied',
+      description: 'API key copied to clipboard',
+    });
   };
 
   return (
@@ -441,6 +537,122 @@ export function Settings() {
                 How often to poll PDUs for status updates (5-300 seconds)
               </p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Key className="h-5 w-5" />
+            API Keys
+          </CardTitle>
+          <CardDescription>
+            Manage API keys for M2M (machine-to-machine) access
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Create new key */}
+          <div className="flex gap-2 mb-4">
+            <Input
+              value={newKeyName}
+              onChange={(e) => setNewKeyName(e.target.value)}
+              placeholder="Key name (e.g., Home Assistant)"
+              className="flex-1"
+            />
+            <Button onClick={handleCreateApiKey} disabled={isCreatingKey}>
+              {isCreatingKey ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Key
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* Show newly created key */}
+          {newlyCreatedKey && (
+            <div className="mb-4 p-3 border rounded-lg bg-muted">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">New API Key (copy now!):</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowNewKey(!showNewKey)}
+                >
+                  {showNewKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 p-2 bg-background rounded text-sm font-mono break-all">
+                  {showNewKey ? newlyCreatedKey : '••••••••••••••••••••••••••••••••'}
+                </code>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyToClipboard(newlyCreatedKey)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <Button
+                variant="link"
+                size="sm"
+                className="mt-2 p-0"
+                onClick={() => {
+                  setNewlyCreatedKey(null);
+                  setShowNewKey(false);
+                }}
+              >
+                Dismiss
+              </Button>
+            </div>
+          )}
+
+          {/* List existing keys */}
+          <div className="space-y-2">
+            {apiKeys.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No API keys configured. Create one to enable M2M access.
+              </p>
+            ) : (
+              apiKeys.map((key) => (
+                <div
+                  key={key.id}
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
+                  <div>
+                    <div className="font-medium">{key.name}</div>
+                    <div className="text-sm text-muted-foreground">
+                      <code>{key.keyPreview}...</code>
+                      {key.lastUsed && (
+                        <span className="ml-2">
+                          Last used: {new Date(key.lastUsed).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={key.isActive}
+                      onCheckedChange={(checked) => handleToggleApiKey(key.id, checked)}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteApiKey(key.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

@@ -249,6 +249,66 @@ Main endpoints:
 - `/api/pdus/:id/metrics` - Power metrics
 - `/api/system/health` - System health
 
+## M2M API
+
+The system provides a simple machine-to-machine API for automation and integration.
+
+### Authentication
+
+All M2M endpoints require an API key in the `X-API-Key` header:
+
+```bash
+curl -H "X-API-Key: your-api-key" http://localhost:3001/m2m/outlets/{uuid}
+```
+
+### Managing API Keys
+
+API keys are managed through the web interface:
+
+1. Navigate to **Settings** in the web UI
+2. Scroll to the **API Keys** section
+3. Click **Create Key** and provide a descriptive name
+4. **Copy the key immediately** - it will only be shown once
+5. Use the toggle to enable/disable keys without deleting them
+
+API keys are stored encrypted in the database using the same AES-256-GCM encryption as SNMP credentials.
+
+### Endpoints
+
+#### Get Outlet State
+```bash
+GET /m2m/outlets/{outletId}
+
+# Response:
+{
+  "id": "uuid",
+  "name": "NAS",
+  "outletNumber": 5,
+  "state": "on",
+  "pdu": { "id": "uuid", "name": "Main-PDU", "ip": "192.168.1.10" }
+}
+```
+
+#### Turn Outlet On
+```bash
+POST /m2m/outlets/{outletId}/on
+
+# Response:
+{ "success": true, "outlet": { "id": "uuid", "name": "NAS", "state": "on" } }
+```
+
+#### Turn Outlet Off
+```bash
+POST /m2m/outlets/{outletId}/off
+
+# Response:
+{ "success": true, "outlet": { "id": "uuid", "name": "NAS", "state": "off" } }
+```
+
+### Finding Outlet UUIDs
+
+Outlet UUIDs are displayed on each outlet card in the web interface. Click the copy icon to copy the UUID for use in API calls.
+
 ## 📈 Prometheus Metrics
 
 The system exposes Prometheus-compatible metrics for comprehensive monitoring and alerting.

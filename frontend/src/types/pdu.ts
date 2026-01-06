@@ -103,3 +103,13 @@ export interface SystemHealth {
   averageResponseTime: number;
   lastSystemCheck: Date;
 }
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  key?: string; // Only present on creation
+  keyPreview: string;
+  isActive: boolean;
+  lastUsed?: Date;
+  createdAt: Date;
+}

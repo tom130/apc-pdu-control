@@ -116,6 +116,23 @@ export const scheduledOperations = pgTable('scheduled_operations', {
   };
 });
 
+// API Keys for M2M authentication
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  keyHash: text('key_hash').notNull(), // For quick lookup (first 8 chars of key)
+  encryptedKey: text('encrypted_key').notNull(), // Full key, encrypted
+  isActive: boolean('is_active').default(true),
+  lastUsed: timestamp('last_used', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (table) => {
+  return {
+    keyHashIdx: index('idx_api_keys_key_hash').on(table.keyHash),
+    isActiveIdx: index('idx_api_keys_is_active').on(table.isActive),
+  };
+});
+
 // Relations
 export const pdusRelations = relations(pdus, ({ many }) => ({
   outlets: many(outlets),
@@ -173,3 +190,5 @@ export type PowerMetrics = typeof powerMetrics.$inferSelect;
 export type NewPowerMetrics = typeof powerMetrics.$inferInsert;
 export type ScheduledOperation = typeof scheduledOperations.$inferSelect;
 export type NewScheduledOperation = typeof scheduledOperations.$inferInsert;
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type NewApiKey = typeof apiKeys.$inferInsert;

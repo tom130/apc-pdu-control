@@ -46,6 +46,11 @@ export function decrypt(encryptedData: string): string {
   return decrypted;
 }
 
+export function generateApiKey(): string {
+  // Generate 32 random bytes = 64 hex characters
+  return randomBytes(32).toString('hex');
+}
+
 export function hashPassword(password: string): string {
   return Bun.password.hashSync(password);
 }

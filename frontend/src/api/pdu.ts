@@ -1,13 +1,14 @@
 import axios, { AxiosInstance } from 'axios';
-import type { 
-  PDU, 
-  Outlet, 
+import type {
+  PDU,
+  Outlet,
   OutletState,
-  PDUEvent, 
-  PowerMetrics, 
+  PDUEvent,
+  PowerMetrics,
   OutletStateHistory,
   SystemHealth,
-  ScheduledOperation 
+  ScheduledOperation,
+  ApiKey
 } from '@/types/pdu';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -251,6 +252,26 @@ class PDUApiClient {
   async getSystemHealth(): Promise<SystemHealth> {
     const response = await this.client.get<SystemHealth>('/system/health');
     return response.data;
+  }
+
+  // API Keys
+  async getApiKeys(): Promise<ApiKey[]> {
+    const response = await this.client.get<ApiKey[]>('/api-keys');
+    return response.data;
+  }
+
+  async createApiKey(name: string): Promise<ApiKey> {
+    const response = await this.client.post<ApiKey>('/api-keys', { name });
+    return response.data;
+  }
+
+  async updateApiKey(id: string, updates: { name?: string; isActive?: boolean }): Promise<ApiKey> {
+    const response = await this.client.put<ApiKey>(`/api-keys/${id}`, updates);
+    return response.data;
+  }
+
+  async deleteApiKey(id: string): Promise<void> {
+    await this.client.delete(`/api-keys/${id}`);
   }
 
   // WebSocket connection for real-time updates
