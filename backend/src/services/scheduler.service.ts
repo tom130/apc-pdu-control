@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { eq, and, lte } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { pdus, outlets, powerMetrics, pduEvents } from '../db/schema';
+import { pdus, outlets, powerMetrics, pduEvents, outletStateHistory, cronSchedules, scheduledOperations } from '../db/schema';
+import { Cron } from 'croner';
 import { SNMPService } from './snmp.service';
 import { StateManager } from './state-manager.service';
 import { WebSocketService } from './websocket.service';
@@ -13,6 +14,7 @@ export class SchedulerService {
   private wsService: WebSocketService;
   private prometheusService: PrometheusService | null = null;
   private isRunning = false;
+  private isCheckingSchedules = false;
 
   constructor(
     private db: PostgresJsDatabase<any>,
@@ -62,6 +64,14 @@ export class SchedulerService {
       });
     }, INTERVALS.METRICS);
     this.intervals.push(metricsInterval);
+
+    // Check scheduled operations every minute
+    const scheduleCheckInterval = setInterval(() => {
+      this.checkScheduledOperations().catch(error => {
+        logger.error({ error }, 'Failed to check scheduled operations');
+      });
+    }, INTERVALS.SCHEDULE_CHECK);
+    this.intervals.push(scheduleCheckInterval);
 
     // Run initial poll
     this.pollAllPDUs().catch(error => {
@@ -184,6 +194,159 @@ export class SchedulerService {
     }
   }
 
+  private async checkScheduledOperations() {
+    if (this.isCheckingSchedules) {
+      logger.debug('Schedule check already in progress, skipping');
+      return;
+    }
+
+    this.isCheckingSchedules = true;
+    try {
+      await this.executeOneTimeSchedules();
+      await this.executeCronSchedules();
+    } finally {
+      this.isCheckingSchedules = false;
+    }
+  }
+
+  private async executeOneTimeSchedules() {
+    const now = new Date();
+    const dueOperations = await this.db
+      .select({
+        operation: scheduledOperations,
+        outlet: outlets,
+      })
+      .from(scheduledOperations)
+      .innerJoin(outlets, eq(scheduledOperations.outletId, outlets.id))
+      .where(and(
+        lte(scheduledOperations.scheduledTime, now),
+        eq(scheduledOperations.executed, false)
+      ));
+
+    for (const { operation, outlet } of dueOperations) {
+      await this.executeScheduledOperation(outlet, operation.operation, 'one-time', operation.id);
+    }
+  }
+
+  private async executeCronSchedules() {
+    const now = new Date();
+    const activeSchedules = await this.db
+      .select({
+        schedule: cronSchedules,
+        outlet: outlets,
+      })
+      .from(cronSchedules)
+      .innerJoin(outlets, eq(cronSchedules.outletId, outlets.id))
+      .where(and(
+        eq(cronSchedules.isActive, true),
+        lte(cronSchedules.nextRunAt, now)
+      ));
+
+    for (const { schedule, outlet } of activeSchedules) {
+      try {
+        const cron = new Cron(schedule.cronExpression);
+        await this.executeScheduledOperation(outlet, schedule.operation, 'cron', schedule.id);
+
+        // Update nextRunAt and lastExecutedAt
+        const nextRun = cron.nextRun();
+        await this.db
+          .update(cronSchedules)
+          .set({
+            lastExecutedAt: now,
+            nextRunAt: nextRun,
+            updatedAt: now,
+          })
+          .where(eq(cronSchedules.id, schedule.id));
+      } catch (error: any) {
+        logger.error({ error: error.message, scheduleId: schedule.id }, 'Failed to parse cron expression');
+      }
+    }
+  }
+
+  private async executeScheduledOperation(
+    outlet: any,
+    operation: string,
+    scheduleType: 'one-time' | 'cron',
+    scheduleId: string
+  ) {
+    const [pduRow] = await this.db
+      .select()
+      .from(pdus)
+      .where(eq(pdus.id, outlet.pduId));
+
+    if (!pduRow) {
+      logger.error({ outletId: outlet.id }, 'PDU not found for scheduled operation');
+      return;
+    }
+
+    const previousState = outlet.actualState;
+
+    try {
+      await this.snmpService.setOutletPower(pduRow, outlet.outletNumber, operation as any);
+
+      await this.db
+        .update(outlets)
+        .set({ actualState: operation === 'reboot' ? outlet.actualState : operation, updatedAt: new Date() })
+        .where(eq(outlets.id, outlet.id));
+
+      await this.db.insert(outletStateHistory).values({
+        outletId: outlet.id,
+        previousState,
+        newState: operation,
+        changeType: 'scheduled',
+        initiatedBy: 'scheduler',
+        success: true,
+      });
+
+      if (scheduleType === 'one-time') {
+        await this.db
+          .update(scheduledOperations)
+          .set({ executed: true, executedAt: new Date() })
+          .where(eq(scheduledOperations.id, scheduleId));
+      }
+
+      this.wsService.broadcast('outlet:scheduled-operation', {
+        outletId: outlet.id,
+        pduId: outlet.pduId,
+        operation,
+        scheduleType,
+        scheduleId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      }, `pdu:${outlet.pduId}`);
+
+      logger.info({
+        outlet: outlet.name || `#${outlet.outletNumber}`,
+        operation,
+        scheduleType,
+      }, 'Scheduled operation executed');
+
+    } catch (error: any) {
+      logger.error({ error: error.message, outletId: outlet.id, operation }, 'Scheduled operation failed');
+
+      await this.db.insert(outletStateHistory).values({
+        outletId: outlet.id,
+        previousState,
+        newState: operation,
+        changeType: 'scheduled',
+        initiatedBy: 'scheduler',
+        success: false,
+        errorMessage: error.message,
+      });
+
+      this.wsService.broadcast('outlet:scheduled-operation', {
+        outletId: outlet.id,
+        pduId: outlet.pduId,
+        operation,
+        scheduleType,
+        scheduleId,
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      }, `pdu:${outlet.pduId}`);
+    }
+  }
+
   private async collectMetrics() {
     const activePDUs = await this.db
       .select()
@@ -241,6 +404,158 @@ export class SchedulerService {
         logger.error({ error, pdu: pdu.name }, 'Failed to collect metrics');
         this.getPrometheusService().recordError(pdu, 'metrics_collection_failed', 'collectMetrics');
       }
+    }
+  }
+
+  private async checkScheduledOperations() {
+    if (this.isCheckingSchedules) {
+      logger.debug('Schedule check already in progress, skipping');
+      return;
+    }
+
+    this.isCheckingSchedules = true;
+    try {
+      await this.executeOneTimeSchedules();
+      await this.executeCronSchedules();
+    } finally {
+      this.isCheckingSchedules = false;
+    }
+  }
+
+  private async executeOneTimeSchedules() {
+    const now = new Date();
+    const dueOperations = await this.db
+      .select({
+        operation: scheduledOperations,
+        outlet: outlets,
+      })
+      .from(scheduledOperations)
+      .innerJoin(outlets, eq(scheduledOperations.outletId, outlets.id))
+      .where(and(
+        lte(scheduledOperations.scheduledTime, now),
+        eq(scheduledOperations.executed, false)
+      ));
+
+    for (const { operation, outlet } of dueOperations) {
+      await this.executeScheduledOperation(outlet, operation.operation, 'one-time', operation.id);
+    }
+  }
+
+  private async executeCronSchedules() {
+    const now = new Date();
+    const activeSchedules = await this.db
+      .select({
+        schedule: cronSchedules,
+        outlet: outlets,
+      })
+      .from(cronSchedules)
+      .innerJoin(outlets, eq(cronSchedules.outletId, outlets.id))
+      .where(and(
+        eq(cronSchedules.isActive, true),
+        lte(cronSchedules.nextRunAt, now)
+      ));
+
+    for (const { schedule, outlet } of activeSchedules) {
+      try {
+        const cron = new Cron(schedule.cronExpression);
+        await this.executeScheduledOperation(outlet, schedule.operation, 'cron', schedule.id);
+
+        const nextRun = cron.nextRun();
+        await this.db
+          .update(cronSchedules)
+          .set({
+            lastExecutedAt: now,
+            nextRunAt: nextRun,
+            updatedAt: now,
+          })
+          .where(eq(cronSchedules.id, schedule.id));
+      } catch (error: any) {
+        logger.error({ error: error.message, scheduleId: schedule.id }, 'Failed to parse cron expression');
+      }
+    }
+  }
+
+  private async executeScheduledOperation(
+    outlet: any,
+    operation: string,
+    scheduleType: 'one-time' | 'cron',
+    scheduleId: string
+  ) {
+    const [pduRow] = await this.db
+      .select()
+      .from(pdus)
+      .where(eq(pdus.id, outlet.pduId));
+
+    if (!pduRow) {
+      logger.error({ outletId: outlet.id }, 'PDU not found for scheduled operation');
+      return;
+    }
+
+    const previousState = outlet.actualState;
+
+    try {
+      await this.snmpService.setOutletPower(pduRow, outlet.outletNumber, operation as any);
+
+      await this.db
+        .update(outlets)
+        .set({ actualState: operation === 'reboot' ? outlet.actualState : operation, updatedAt: new Date() })
+        .where(eq(outlets.id, outlet.id));
+
+      await this.db.insert(outletStateHistory).values({
+        outletId: outlet.id,
+        previousState,
+        newState: operation,
+        changeType: 'scheduled',
+        initiatedBy: 'scheduler',
+        success: true,
+      });
+
+      if (scheduleType === 'one-time') {
+        await this.db
+          .update(scheduledOperations)
+          .set({ executed: true, executedAt: new Date() })
+          .where(eq(scheduledOperations.id, scheduleId));
+      }
+
+      this.wsService.broadcast('outlet:scheduled-operation', {
+        outletId: outlet.id,
+        pduId: outlet.pduId,
+        operation,
+        scheduleType,
+        scheduleId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      }, `pdu:${outlet.pduId}`);
+
+      logger.info({
+        outlet: outlet.name || `#${outlet.outletNumber}`,
+        operation,
+        scheduleType,
+      }, 'Scheduled operation executed');
+
+    } catch (error: any) {
+      logger.error({ error: error.message, outletId: outlet.id, operation }, 'Scheduled operation failed');
+
+      await this.db.insert(outletStateHistory).values({
+        outletId: outlet.id,
+        previousState,
+        newState: operation,
+        changeType: 'scheduled',
+        initiatedBy: 'scheduler',
+        success: false,
+        errorMessage: error.message,
+      });
+
+      this.wsService.broadcast('outlet:scheduled-operation', {
+        outletId: outlet.id,
+        pduId: outlet.pduId,
+        operation,
+        scheduleType,
+        scheduleId,
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      }, `pdu:${outlet.pduId}`);
     }
   }
 }

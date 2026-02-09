@@ -8,6 +8,8 @@ import type {
   OutletStateHistory,
   SystemHealth,
   ScheduledOperation,
+  CronSchedule,
+  OutletSchedules,
   ApiKey
 } from '@/types/pdu';
 
@@ -226,26 +228,47 @@ class PDUApiClient {
     return response.data;
   }
 
-  // Scheduled Operations
-  async getScheduledOperations(outletId?: string): Promise<ScheduledOperation[]> {
-    const response = await this.client.get<ScheduledOperation[]>('/scheduled-operations', {
-      params: { outletId },
-    });
+  // Schedules
+  async getOutletSchedules(outletId: string): Promise<OutletSchedules> {
+    const response = await this.client.get<OutletSchedules>(`/schedules/outlet/${outletId}`);
     return response.data;
   }
 
-  async createScheduledOperation(
-    operation: Omit<ScheduledOperation, 'id' | 'createdAt' | 'executed'>
-  ): Promise<ScheduledOperation> {
-    const response = await this.client.post<ScheduledOperation>(
-      '/scheduled-operations',
-      operation
-    );
+  async createCronSchedule(data: {
+    outletId: string;
+    name: string;
+    cronExpression: string;
+    operation: OutletState;
+  }): Promise<CronSchedule> {
+    const response = await this.client.post<CronSchedule>('/schedules/cron', data);
     return response.data;
   }
 
-  async deleteScheduledOperation(id: string): Promise<void> {
-    await this.client.delete(`/scheduled-operations/${id}`);
+  async updateCronSchedule(id: string, updates: {
+    name?: string;
+    cronExpression?: string;
+    operation?: OutletState;
+    isActive?: boolean;
+  }): Promise<CronSchedule> {
+    const response = await this.client.put<CronSchedule>(`/schedules/cron/${id}`, updates);
+    return response.data;
+  }
+
+  async deleteCronSchedule(id: string): Promise<void> {
+    await this.client.delete(`/schedules/cron/${id}`);
+  }
+
+  async createOneTimeSchedule(data: {
+    outletId: string;
+    operation: OutletState;
+    scheduledTime: string;
+  }): Promise<ScheduledOperation> {
+    const response = await this.client.post<ScheduledOperation>('/schedules/one-time', data);
+    return response.data;
+  }
+
+  async deleteOneTimeSchedule(id: string): Promise<void> {
+    await this.client.delete(`/schedules/one-time/${id}`);
   }
 
   // System Health

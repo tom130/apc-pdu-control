@@ -7,7 +7,9 @@ import { outletRoutes } from './routes/outlet.routes';
 import { metricsRoutes } from './routes/metrics.routes';
 import { systemRoutes } from './routes/system.routes';
 import { apiKeysRoutes } from './routes/api-keys.routes';
+import { scheduleRoutes } from './routes/schedule.routes';
 import { m2mRoutes } from './routes/m2m.routes';
+import { scheduleRoutes } from './routes/schedule.routes';
 import { websocketHandler } from './services/websocket.service';
 import { SchedulerService } from './services/scheduler.service';
 import { SNMPService } from './services/snmp.service';
@@ -83,6 +85,7 @@ const app = new Elysia()
       .use(metricsRoutes)
       .use(systemRoutes)
       .use(apiKeysRoutes)
+      .use(scheduleRoutes)
   )
   // M2M API routes (with authentication)
   .use(m2mRoutes)

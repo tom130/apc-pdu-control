@@ -116,6 +116,26 @@ export const scheduledOperations = pgTable('scheduled_operations', {
   };
 });
 
+// CRON-based recurring schedules
+export const cronSchedules = pgTable('cron_schedules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  outletId: uuid('outlet_id').notNull().references(() => outlets.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  cronExpression: text('cron_expression').notNull(),
+  operation: text('operation').notNull(), // 'on', 'off', 'reboot'
+  isActive: boolean('is_active').default(true),
+  lastExecutedAt: timestamp('last_executed_at', { withTimezone: true }),
+  nextRunAt: timestamp('next_run_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (table) => {
+  return {
+    outletIdIdx: index('idx_cron_schedules_outlet_id').on(table.outletId),
+    isActiveIdx: index('idx_cron_schedules_is_active').on(table.isActive),
+    nextRunAtIdx: index('idx_cron_schedules_next_run_at').on(table.nextRunAt),
+  };
+});
+
 // API Keys for M2M authentication
 export const apiKeys = pgTable('api_keys', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -147,6 +167,7 @@ export const outletsRelations = relations(outlets, ({ one, many }) => ({
   }),
   stateHistory: many(outletStateHistory),
   scheduledOperations: many(scheduledOperations),
+  cronSchedules: many(cronSchedules),
 }));
 
 export const outletStateHistoryRelations = relations(outletStateHistory, ({ one }) => ({
@@ -177,6 +198,13 @@ export const scheduledOperationsRelations = relations(scheduledOperations, ({ on
   }),
 }));
 
+export const cronSchedulesRelations = relations(cronSchedules, ({ one }) => ({
+  outlet: one(outlets, {
+    fields: [cronSchedules.outletId],
+    references: [outlets.id],
+  }),
+}));
+
 // Types
 export type PDU = typeof pdus.$inferSelect;
 export type NewPDU = typeof pdus.$inferInsert;
@@ -192,3 +220,5 @@ export type ScheduledOperation = typeof scheduledOperations.$inferSelect;
 export type NewScheduledOperation = typeof scheduledOperations.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
+export type CronSchedule = typeof cronSchedules.$inferSelect;
+export type NewCronSchedule = typeof cronSchedules.$inferInsert;

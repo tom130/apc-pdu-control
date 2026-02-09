@@ -68,7 +68,7 @@ export const SNMP_STATE_MAP = {
 // Outlet state types
 export type OutletState = 'on' | 'off' | 'reboot';
 export type LoadState = 'normal' | 'low' | 'near_overload' | 'overload';
-export type ChangeType = 'manual' | 'auto_recovery' | 'pdu_reboot' | 'sync';
+export type ChangeType = 'manual' | 'auto_recovery' | 'pdu_reboot' | 'sync' | 'scheduled';
 export type EventType = 'reboot' | 'connection_lost' | 'connection_restored' | 'state_skew';
 
 // Polling intervals (can be overridden by env vars)
@@ -76,4 +76,5 @@ export const INTERVALS = {
   POLL: parseInt(process.env.POLL_INTERVAL || '30000'),
   RECONCILE: parseInt(process.env.RECONCILE_INTERVAL || '60000'),
   METRICS: parseInt(process.env.METRICS_INTERVAL || '300000'),
+  SCHEDULE_CHECK: parseInt(process.env.SCHEDULE_CHECK_INTERVAL || '60000'),
 } as const;

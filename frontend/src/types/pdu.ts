@@ -1,7 +1,7 @@
 export type OutletState = 'on' | 'off' | 'reboot';
 export type LoadState = 'normal' | 'low' | 'near_overload' | 'overload';
 export type EventType = 'reboot' | 'connection_lost' | 'connection_restored' | 'state_skew';
-export type ChangeType = 'manual' | 'auto_recovery' | 'pdu_reboot' | 'sync';
+export type ChangeType = 'manual' | 'auto_recovery' | 'pdu_reboot' | 'sync' | 'scheduled';
 export type SecurityLevel = 'noAuthNoPriv' | 'authNoPriv' | 'authPriv';
 
 export interface PDU {
@@ -74,6 +74,24 @@ export interface ScheduledOperation {
   scheduledTime: Date;
   executed: boolean;
   createdAt: Date;
+}
+
+export interface CronSchedule {
+  id: string;
+  outletId: string;
+  name: string;
+  cronExpression: string;
+  operation: OutletState;
+  isActive: boolean;
+  lastExecutedAt: Date | null;
+  nextRunAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface OutletSchedules {
+  cron: CronSchedule[];
+  oneTime: ScheduledOperation[];
 }
 
 export interface SNMPConfig {

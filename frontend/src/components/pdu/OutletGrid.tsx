@@ -35,6 +35,7 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableOutletCard } from './SortableOutletCard';
+import { OutletScheduleDialog } from './OutletScheduleDialog';
 
 interface OutletGridProps {
   pduId: string;
@@ -49,6 +50,7 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [sortedOutlets, setSortedOutlets] = useState(outlets);
+  const [scheduleOutlet, setScheduleOutlet] = useState<Outlet | null>(null);
   const { updateOutlet, reorderOutlets } = usePDUStore();
   
   // Update sortedOutlets when outlets prop changes
@@ -288,6 +290,7 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
                   isSelected={selectedOutlets.has(outlet.id)}
                   onToggle={() => handleOutletToggle(outlet)}
                   onReboot={() => handleOutletReboot(outlet)}
+                  onSchedule={() => setScheduleOutlet(outlet)}
                   onSelect={() => toggleOutletSelection(outlet.id)}
                   isLoading={powerMutation.isPending}
                   isReorganizing={isReorganizing}
@@ -312,6 +315,14 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
           </DragOverlay>
         </DndContext>
       </CardContent>
+
+      {scheduleOutlet && (
+        <OutletScheduleDialog
+          outlet={scheduleOutlet}
+          open={!!scheduleOutlet}
+          onOpenChange={(open) => !open && setScheduleOutlet(null)}
+        />
+      )}
     </Card>
   );
 }

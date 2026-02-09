@@ -12,7 +12,8 @@ import {
   Zap,
   CheckCircle2,
   Circle,
-  GripVertical
+  GripVertical,
+  Clock
 } from 'lucide-react';
 
 interface SortableOutletCardProps {
@@ -20,6 +21,7 @@ interface SortableOutletCardProps {
   isSelected: boolean;
   onToggle: () => void;
   onReboot: () => void;
+  onSchedule?: () => void;
   onSelect: () => void;
   isLoading: boolean;
   isReorganizing: boolean;
@@ -30,6 +32,7 @@ export function SortableOutletCard({
   isSelected,
   onToggle,
   onReboot,
+  onSchedule,
   onSelect,
   isLoading,
   isReorganizing,
@@ -192,18 +195,31 @@ export function SortableOutletCard({
           </div>
         </div>
 
-        {/* Reboot button */}
+        {/* Action buttons */}
         {!isReorganizing && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full text-xs py-1 h-7 group/reboot"
-            onClick={onReboot}
-            disabled={isLoading || outlet.isCritical}
-          >
-            <RotateCw className="h-3 w-3 mr-1 transition-transform group-hover/reboot:rotate-180 duration-500" />
-            Reboot
-          </Button>
+          <div className="space-y-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full text-xs py-1 h-7 group/reboot"
+              onClick={onReboot}
+              disabled={isLoading || outlet.isCritical}
+            >
+              <RotateCw className="h-3 w-3 mr-1 transition-transform group-hover/reboot:rotate-180 duration-500" />
+              Reboot
+            </Button>
+            {onSchedule && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs py-1 h-7"
+                onClick={onSchedule}
+              >
+                <Clock className="h-3 w-3 mr-1" />
+                Schedule
+              </Button>
+            )}
+          </div>
         )}
 
         {/* Desired state indicator */}

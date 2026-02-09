@@ -9,12 +9,14 @@ import { PDUInfo } from '@/components/pdu/PDUInfo';
 import { PDUConfigDialog } from '@/components/pdu/PDUConfigDialog';
 import { pduApi } from '@/api/pdu';
 import usePDUStore from '@/store/pduStore';
+import { useToast } from '@/hooks/use-toast';
 
 export function PDUDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { getPduById, setOutlets, outlets, updatePdu } = usePDUStore();
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const { toast } = useToast();
   
   const pdu = id ? getPduById(id) : undefined;
   const pduOutlets = id ? outlets[id] || [] : [];
@@ -38,6 +40,29 @@ export function PDUDetail() {
       setOutlets(id, outletsData);
     }
   }, [outletsData, id, setOutlets]);
+
+  // WebSocket listener for schedule execution events
+  useEffect(() => {
+    if (!id) return;
+
+    const ws = pduApi.connectWebSocket((data) => {
+      if (data.type === 'outlet:scheduled-operation' && data.pduId === id) {
+        const message = data.success
+          ? `Scheduled ${data.operation} executed successfully`
+          : `Scheduled ${data.operation} failed: ${data.error}`;
+
+        toast({
+          title: data.success ? 'Schedule Executed' : 'Schedule Failed',
+          description: message,
+          variant: data.success ? 'default' : 'destructive',
+        });
+
+        refetchOutlets();
+      }
+    });
+
+    return () => ws.close();
+  }, [id, toast, refetchOutlets]);
 
   if (!pdu || !id) {
     return (
