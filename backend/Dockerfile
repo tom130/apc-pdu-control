@@ -19,7 +19,7 @@ RUN bun build ./src/index.ts --outdir=./dist --target=bun
 FROM oven/bun:1-alpine
 
 # Install SNMP tools
-RUN apk add --no-cache net-snmp-tools
+RUN apk add --no-cache net-snmp-tools tzdata
 
 WORKDIR /app
 
