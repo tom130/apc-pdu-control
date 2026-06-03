@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
-import type { PDU, Outlet, PDUEvent, PowerMetrics, StateReconciliation, SystemHealth } from '@/types/pdu';
+import type { PDU, Outlet, PDUEvent, PowerMetrics, SystemHealth } from '@/types/pdu';
 
 interface PDUState {
   // Data
@@ -8,7 +8,6 @@ interface PDUState {
   outlets: Record<string, Outlet[]>; // Keyed by PDU ID
   events: PDUEvent[];
   metrics: PowerMetrics[];
-  reconciliations: Record<string, StateReconciliation>; // Keyed by PDU ID
   systemHealth: SystemHealth | null;
   
   // UI State
@@ -25,15 +24,12 @@ interface PDUState {
   
   setOutlets: (pduId: string, outlets: Outlet[]) => void;
   updateOutlet: (pduId: string, outletId: string, updates: Partial<Outlet>) => void;
-  setDesiredState: (pduId: string, outletId: string, state: 'on' | 'off' | 'reboot') => void;
   reorderOutlets: (pduId: string, outlets: Outlet[]) => void;
   
   addEvent: (event: PDUEvent) => void;
   clearEvents: (pduId?: string) => void;
   
   addMetrics: (metrics: PowerMetrics) => void;
-  
-  setReconciliation: (pduId: string, reconciliation: StateReconciliation) => void;
   
   setSystemHealth: (health: SystemHealth) => void;
   
@@ -45,7 +41,6 @@ interface PDUState {
   // Helper methods
   getPduById: (id: string) => PDU | undefined;
   getOutletsByPduId: (pduId: string) => Outlet[];
-  getSkewedOutlets: (pduId: string) => Outlet[];
 }
 
 const usePDUStore = create<PDUState>()(
@@ -57,7 +52,6 @@ const usePDUStore = create<PDUState>()(
         outlets: {},
         events: [],
         metrics: [],
-        reconciliations: {},
         systemHealth: null,
         selectedPduId: null,
         isLoading: false,
@@ -98,11 +92,6 @@ const usePDUStore = create<PDUState>()(
           }
         })),
         
-        setDesiredState: (pduId, outletId, desiredState) => {
-          const state = get();
-          state.updateOutlet(pduId, outletId, { desiredState });
-        },
-        
         reorderOutlets: (pduId, outlets) => set((state) => ({
           outlets: { ...state.outlets, [pduId]: outlets }
         })),
@@ -123,14 +112,6 @@ const usePDUStore = create<PDUState>()(
           metrics: [metrics, ...state.metrics].slice(0, 500) // Keep last 500 metrics
         })),
         
-        // Reconciliation Actions
-        setReconciliation: (pduId, reconciliation) => set((state) => ({
-          reconciliations: {
-            ...state.reconciliations,
-            [pduId]: reconciliation
-          }
-        })),
-        
         // System Health Actions
         setSystemHealth: (health) => set({ systemHealth: health }),
         
@@ -144,15 +125,6 @@ const usePDUStore = create<PDUState>()(
         getPduById: (id) => get().pdus.find(pdu => pdu.id === id),
         
         getOutletsByPduId: (pduId) => get().outlets[pduId] || [],
-        
-        getSkewedOutlets: (pduId) => {
-          const outlets = get().outlets[pduId] || [];
-          return outlets.filter(outlet => 
-            outlet.desiredState && 
-            outlet.actualState && 
-            outlet.desiredState !== outlet.actualState
-          );
-        },
       }),
       {
         name: 'pdu-store',

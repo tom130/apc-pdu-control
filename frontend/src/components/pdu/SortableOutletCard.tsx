@@ -4,16 +4,17 @@ import { Outlet } from '@/types/pdu';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   Power,
   RotateCw,
-  AlertTriangle,
   Shield,
   Zap,
   CheckCircle2,
   Circle,
   GripVertical,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 
 interface SortableOutletCardProps {
@@ -23,7 +24,10 @@ interface SortableOutletCardProps {
   onReboot: () => void;
   onSchedule?: () => void;
   onSelect: () => void;
+  onAutoRecoveryChange: (autoRecovery: boolean) => void;
+  onCriticalChange: (isCritical: boolean) => void;
   isLoading: boolean;
+  isUpdatingFlags: boolean;
   isReorganizing: boolean;
 }
 
@@ -34,7 +38,10 @@ export function SortableOutletCard({
   onReboot,
   onSchedule,
   onSelect,
+  onAutoRecoveryChange,
+  onCriticalChange,
   isLoading,
+  isUpdatingFlags,
   isReorganizing,
 }: SortableOutletCardProps) {
   const {
@@ -55,7 +62,6 @@ export function SortableOutletCard({
   };
 
   const isOn = outlet.actualState === 'on';
-  const hasSkew = outlet.desiredState && outlet.desiredState !== outlet.actualState;
 
   return (
     <div
@@ -66,7 +72,6 @@ export function SortableOutletCard({
         "bg-gradient-to-br from-card to-card/50",
         "border",
         isSelected ? "border-primary shadow-md shadow-primary/20" : "border-border",
-        hasSkew && "border-amber-500 dark:border-amber-400",
         outlet.isCritical && "border-red-500 dark:border-red-400",
         "hover:shadow-lg hover:scale-[1.01] hover:border-primary/50",
         isDragging && "opacity-50 z-50 shadow-2xl"
@@ -110,13 +115,13 @@ export function SortableOutletCard({
         isReorganizing ? "left-8" : "left-2"
       )}>
         {outlet.isCritical && (
-          <Badge variant="destructive" className="text-xs px-1.5 py-0">
+          <Badge variant="destructive" className="text-xs px-1.5 py-0" title="Critical outlet">
             <Shield className="h-2.5 w-2.5" />
           </Badge>
         )}
-        {hasSkew && (
-          <Badge variant="warning" className="text-xs px-1.5 py-0">
-            <AlertTriangle className="h-2.5 w-2.5" />
+        {outlet.autoRecovery && (
+          <Badge variant="secondary" className="text-xs px-1.5 py-0" title="Auto-restore enabled">
+            <RefreshCw className="h-2.5 w-2.5" />
           </Badge>
         )}
       </div>
@@ -197,7 +202,39 @@ export function SortableOutletCard({
 
         {/* Action buttons */}
         {!isReorganizing && (
-          <div className="space-y-1">
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-1.5">
+              <label
+                className="flex items-center justify-between gap-1 rounded-md border bg-background/70 px-1.5 py-1 text-[10px]"
+                title="Toggle critical outlet protection"
+              >
+                <span className="flex items-center gap-1 truncate">
+                  <Shield className="h-3 w-3" />
+                  Critical
+                </span>
+                <Switch
+                  checked={outlet.isCritical}
+                  disabled={isUpdatingFlags}
+                  onCheckedChange={onCriticalChange}
+                  className="h-4 w-7 data-[state=checked]:bg-red-600 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                />
+              </label>
+              <label
+                className="flex items-center justify-between gap-1 rounded-md border bg-background/70 px-1.5 py-1 text-[10px]"
+                title="Toggle inclusion in power-loss restore"
+              >
+                <span className="flex items-center gap-1 truncate">
+                  <RefreshCw className="h-3 w-3" />
+                  Restore
+                </span>
+                <Switch
+                  checked={outlet.autoRecovery}
+                  disabled={isUpdatingFlags}
+                  onCheckedChange={onAutoRecoveryChange}
+                  className="h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                />
+              </label>
+            </div>
             <Button
               size="sm"
               variant="outline"
@@ -219,15 +256,6 @@ export function SortableOutletCard({
                 Schedule
               </Button>
             )}
-          </div>
-        )}
-
-        {/* Desired state indicator */}
-        {outlet.desiredState && outlet.desiredState !== outlet.actualState && (
-          <div className="text-center">
-            <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-              Target: {outlet.desiredState.toUpperCase()}
-            </div>
           </div>
         )}
       </div>

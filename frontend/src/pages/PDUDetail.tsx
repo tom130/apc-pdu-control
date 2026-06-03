@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, RefreshCw, Settings } from 'lucide-react';
@@ -17,6 +17,7 @@ export function PDUDetail() {
   const { getPduById, setOutlets, outlets, updatePdu } = usePDUStore();
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const { toast } = useToast();
+  const lastStatusRef = useRef<string | null>(null);
   
   const pdu = id ? getPduById(id) : undefined;
   const pduOutlets = id ? outlets[id] || [] : [];
@@ -41,20 +42,84 @@ export function PDUDetail() {
     }
   }, [outletsData, id, setOutlets]);
 
-  // WebSocket listener for schedule execution events
+  // WebSocket listener for PDU and outlet events.
   useEffect(() => {
     if (!id) return;
 
-    const ws = pduApi.connectWebSocket((data) => {
-      if (data.type === 'outlet:scheduled-operation' && data.pduId === id) {
-        const message = data.success
-          ? `Scheduled ${data.operation} executed successfully`
-          : `Scheduled ${data.operation} failed: ${data.error}`;
+    const ws = pduApi.connectWebSocket((message) => {
+      const payload = message.data || {};
+      const pduId = payload.pduId;
+
+      if (pduId && pduId !== id) return;
+
+      if (message.type === 'pdu:status-update') {
+        const status = payload.status as string | undefined;
+
+        if (status && status !== lastStatusRef.current) {
+          if (status === 'offline') {
+            toast({
+              title: 'PDU Offline',
+              description: payload.error || 'Connection to the PDU was lost.',
+              variant: 'destructive',
+            });
+          }
+
+          if (status === 'online' && lastStatusRef.current === 'offline') {
+            toast({
+              title: 'PDU Online',
+              description: 'Connection restored; outlet restore has been checked.',
+            });
+          }
+
+          lastStatusRef.current = status;
+        }
+
+        if (status === 'online') {
+          updatePdu(id, { lastSeen: payload.lastSeen ? new Date(payload.lastSeen) : new Date() });
+          refetchOutlets();
+        }
+      }
+
+      if (message.type === 'connection_lost') {
+        toast({
+          title: 'PDU Offline',
+          description: payload.description || 'Connection to the PDU was lost.',
+          variant: 'destructive',
+        });
+      }
+
+      if (message.type === 'connection_restored') {
+        toast({
+          title: 'PDU Online',
+          description: payload.description || 'Connection restored; outlet restore has been checked.',
+        });
+        refetchOutlets();
+      }
+
+      if (message.type === 'recovery_complete' || message.type === 'pdu:restore-complete') {
+        const recovered = payload.recovered ?? payload.metadata?.recovered ?? 0;
+        const failed = payload.failed ?? payload.metadata?.failed ?? 0;
+        toast({
+          title: 'Restore Complete',
+          description: `${recovered} outlets restored${failed ? `, ${failed} failed` : ''}.`,
+          variant: failed ? 'destructive' : 'default',
+        });
+        refetchOutlets();
+      }
+
+      if (message.type === 'outlet:state-changed') {
+        refetchOutlets();
+      }
+
+      if (message.type === 'outlet:scheduled-operation') {
+        const messageText = payload.success
+          ? `Scheduled ${payload.operation} executed successfully`
+          : `Scheduled ${payload.operation} failed: ${payload.error}`;
 
         toast({
-          title: data.success ? 'Schedule Executed' : 'Schedule Failed',
-          description: message,
-          variant: data.success ? 'default' : 'destructive',
+          title: payload.success ? 'Schedule Executed' : 'Schedule Failed',
+          description: messageText,
+          variant: payload.success ? 'default' : 'destructive',
         });
 
         refetchOutlets();
@@ -62,7 +127,7 @@ export function PDUDetail() {
     });
 
     return () => ws.close();
-  }, [id, toast, refetchOutlets]);
+  }, [id, toast, refetchOutlets, updatePdu]);
 
   if (!pdu || !id) {
     return (
@@ -76,11 +141,6 @@ export function PDUDetail() {
       </div>
     );
   }
-
-  const handleReconcile = async () => {
-    await pduApi.reconcilePDUState(id);
-    refetchOutlets();
-  };
 
   const handleConfigSuccess = async () => {
     // Refresh the PDU data after successful update
@@ -107,9 +167,9 @@ export function PDUDetail() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleReconcile}>
+          <Button variant="outline" onClick={() => refetchOutlets()}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Reconcile State
+            Refresh
           </Button>
           <Button variant="outline" onClick={() => setConfigDialogOpen(true)}>
             <Settings className="h-4 w-4 mr-2" />

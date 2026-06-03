@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Server, Power, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Server, Power, ArrowRight, RefreshCw } from 'lucide-react';
 import { PDU } from '@/types/pdu';
 import usePDUStore from '@/store/pduStore';
 import { format } from 'date-fns';
@@ -13,12 +13,10 @@ interface PDUCardProps {
 
 export function PDUCard({ pdu }: PDUCardProps) {
   const navigate = useNavigate();
-  const { getOutletsByPduId, getSkewedOutlets, reconciliations } = usePDUStore();
+  const { getOutletsByPduId } = usePDUStore();
   
   const outlets = getOutletsByPduId(pdu.id);
-  const skewedOutlets = getSkewedOutlets(pdu.id);
-  const reconciliation = reconciliations[pdu.id];
-  const hasSkew = skewedOutlets.length > 0;
+  const autoRestoreCount = outlets.filter(o => o.autoRecovery).length;
 
   return (
     <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/pdu/${pdu.id}`)}>
@@ -54,20 +52,14 @@ export function PDUCard({ pdu }: PDUCardProps) {
             </span>
           </div>
           
-          {hasSkew && (
+          {outlets.length > 0 && (
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">State Skew</span>
+              <span className="text-muted-foreground">Auto-Restore</span>
               <span className="flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 text-yellow-500" />
-                {skewedOutlets.length}
+                <RefreshCw className="h-3 w-3 text-blue-500" />
+                {autoRestoreCount}/{outlets.length}
               </span>
             </div>
-          )}
-          
-          {reconciliation?.isReconciling && (
-            <Badge variant="warning" className="w-full justify-center">
-              Reconciling...
-            </Badge>
           )}
           
           {pdu.lastSeen && (

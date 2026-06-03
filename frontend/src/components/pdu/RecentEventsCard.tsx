@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Power, WifiOff, Wifi, RotateCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Power, WifiOff, Wifi } from 'lucide-react';
 import { pduApi } from '@/api/pdu';
 import { PDUEvent } from '@/types/pdu';
 import { format } from 'date-fns';
@@ -18,12 +18,12 @@ export function RecentEventsCard() {
 
   const getEventIcon = (eventType: PDUEvent['eventType']) => {
     switch (eventType) {
-      case 'reboot':
-        return <RotateCw className="h-4 w-4" />;
       case 'connection_lost':
         return <WifiOff className="h-4 w-4 text-red-500" />;
       case 'connection_restored':
         return <Wifi className="h-4 w-4 text-green-500" />;
+      case 'recovery_complete':
+        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
       case 'state_skew':
         return <AlertCircle className="h-4 w-4 text-yellow-500" />;
       default:
@@ -36,12 +36,18 @@ export function RecentEventsCard() {
       case 'connection_lost':
         return 'destructive';
       case 'connection_restored':
+      case 'recovery_complete':
         return 'success';
       case 'state_skew':
         return 'warning';
       default:
         return 'secondary';
     }
+  };
+
+  const getEventLabel = (eventType: PDUEvent['eventType']) => {
+    if (eventType === 'state_skew') return 'load warning';
+    return eventType.replace('_', ' ');
   };
 
   return (
@@ -65,7 +71,7 @@ export function RecentEventsCard() {
                   <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-2">
                       <Badge variant={getEventVariant(event.eventType)}>
-                        {event.eventType.replace('_', ' ')}
+                        {getEventLabel(event.eventType)}
                       </Badge>
                       <span className="text-sm font-medium">
                         {pdu?.name || 'Unknown PDU'}

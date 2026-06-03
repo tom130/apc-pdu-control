@@ -2,6 +2,7 @@ import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
 import { swagger } from '@elysiajs/swagger';
 import { db } from './db';
+import { backfillSnapshot } from './db/backfill';
 import { pduRoutes } from './routes/pdu.routes';
 import { outletRoutes } from './routes/outlet.routes';
 import { metricsRoutes } from './routes/metrics.routes';
@@ -9,7 +10,6 @@ import { systemRoutes } from './routes/system.routes';
 import { apiKeysRoutes } from './routes/api-keys.routes';
 import { scheduleRoutes } from './routes/schedule.routes';
 import { m2mRoutes } from './routes/m2m.routes';
-import { scheduleRoutes } from './routes/schedule.routes';
 import { websocketHandler } from './services/websocket.service';
 import { SchedulerService } from './services/scheduler.service';
 import { SNMPService } from './services/snmp.service';
@@ -122,6 +122,13 @@ app.listen({
 });
 
 // Start background services
+try {
+  const backfilledSnapshots = await backfillSnapshot(db);
+  logger.info({ count: backfilledSnapshots }, 'Restore snapshot backfill completed');
+} catch (error: any) {
+  logger.error({ error: error.message }, 'Restore snapshot backfill failed');
+}
+
 schedulerService.start();
 
 logger.info(`🚀 APC PDU API is running at http://${host}:${port}`);

@@ -196,48 +196,4 @@ export const pduRoutes = new Elysia({ prefix: '/pdus' })
     })
   })
   
-  .post('/:pduId/reconcile', async ({ params, db, stateManager, set }) => {
-    const [pdu] = await db
-      .select()
-      .from(pdus)
-      .where(eq(pdus.id, params.pduId))
-      .limit(1);
-    
-    if (!pdu) {
-      set.status = 404;
-      return { error: 'PDU not found' };
-    }
-    
-    const result = await stateManager.reconcileStates(pdu);
-    return {
-      success: true,
-      ...result
-    };
-  }, {
-    params: t.Object({
-      pduId: t.String({ format: 'uuid' })
-    })
-  })
-  
-  .post('/:pduId/recover', async ({ params, db, stateManager, set }) => {
-    const [pdu] = await db
-      .select()
-      .from(pdus)
-      .where(eq(pdus.id, params.pduId))
-      .limit(1);
-    
-    if (!pdu) {
-      set.status = 404;
-      return { error: 'PDU not found' };
-    }
-    
-    const result = await stateManager.recoverFromReboot(pdu);
-    return {
-      success: true,
-      ...result
-    };
-  }, {
-    params: t.Object({
-      pduId: t.String({ format: 'uuid' })
-    })
-  });
+;

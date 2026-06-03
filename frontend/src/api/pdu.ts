@@ -3,6 +3,7 @@ import type {
   PDU,
   Outlet,
   OutletState,
+  OutletOperation,
   PDUEvent,
   PowerMetrics,
   OutletStateHistory,
@@ -14,6 +15,25 @@ import type {
 } from '@/types/pdu';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
+export interface WsEnvelope<T = any> {
+  type: string;
+  channel?: string;
+  data: T;
+  timestamp?: string;
+}
+
+export function normalizeWsEvent(message: any): WsEnvelope {
+  if (message && typeof message === 'object' && 'data' in message) {
+    return message as WsEnvelope;
+  }
+
+  return {
+    type: message?.type ?? 'unknown',
+    data: message,
+    timestamp: message?.timestamp,
+  };
+}
 
 class PDUApiClient {
   private client: AxiosInstance;
@@ -106,7 +126,7 @@ class PDUApiClient {
   async setOutletPower(
     pduId: string,
     outletId: string,
-    state: OutletState
+    state: OutletOperation
   ): Promise<{ success: boolean; newState: OutletState }> {
     const response = await this.client.post<{ success: boolean; newState: OutletState }>(
       `/pdus/${pduId}/outlets/${outletId}/power`,
@@ -115,21 +135,9 @@ class PDUApiClient {
     return response.data;
   }
 
-  async setDesiredState(
-    pduId: string,
-    outletId: string,
-    state: OutletState
-  ): Promise<Outlet> {
-    const response = await this.client.post<Outlet>(
-      `/pdus/${pduId}/outlets/${outletId}/desired-state`,
-      { state }
-    );
-    return response.data;
-  }
-
   async bulkOutletControl(
     pduId: string,
-    operation: 'on' | 'off' | 'reboot'
+    operation: OutletOperation
   ): Promise<{ success: boolean; affected: number }> {
     const response = await this.client.post<{ success: boolean; affected: number }>(
       `/pdus/${pduId}/outlets/bulk`,
@@ -201,33 +209,6 @@ class PDUApiClient {
     return response.data;
   }
 
-  // State Reconciliation
-  async reconcilePDUState(pduId: string): Promise<{
-    success: boolean;
-    reconciled: number;
-    failed: number;
-  }> {
-    const response = await this.client.post<{
-      success: boolean;
-      reconciled: number;
-      failed: number;
-    }>(`/pdus/${pduId}/reconcile`);
-    return response.data;
-  }
-
-  async recoverFromReboot(pduId: string): Promise<{
-    success: boolean;
-    recovered: number;
-    failed: number;
-  }> {
-    const response = await this.client.post<{
-      success: boolean;
-      recovered: number;
-      failed: number;
-    }>(`/pdus/${pduId}/recover`);
-    return response.data;
-  }
-
   // Schedules
   async getOutletSchedules(outletId: string): Promise<OutletSchedules> {
     const response = await this.client.get<OutletSchedules>(`/schedules/outlet/${outletId}`);
@@ -238,7 +219,7 @@ class PDUApiClient {
     outletId: string;
     name: string;
     cronExpression: string;
-    operation: OutletState;
+    operation: OutletOperation;
   }): Promise<CronSchedule> {
     const response = await this.client.post<CronSchedule>('/schedules/cron', data);
     return response.data;
@@ -247,7 +228,7 @@ class PDUApiClient {
   async updateCronSchedule(id: string, updates: {
     name?: string;
     cronExpression?: string;
-    operation?: OutletState;
+    operation?: OutletOperation;
     isActive?: boolean;
   }): Promise<CronSchedule> {
     const response = await this.client.put<CronSchedule>(`/schedules/cron/${id}`, updates);
@@ -260,7 +241,7 @@ class PDUApiClient {
 
   async createOneTimeSchedule(data: {
     outletId: string;
-    operation: OutletState;
+    operation: OutletOperation;
     scheduledTime: string;
   }): Promise<ScheduledOperation> {
     const response = await this.client.post<ScheduledOperation>('/schedules/one-time', data);
@@ -298,14 +279,15 @@ class PDUApiClient {
   }
 
   // WebSocket connection for real-time updates
-  connectWebSocket(onMessage: (data: any) => void): WebSocket {
-    const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + '/ws';
+  connectWebSocket(onMessage: (message: WsEnvelope) => void): WebSocket {
+    const wsBase = API_BASE_URL.replace(/\/api$/, '').replace(/^http/, 'ws');
+    const wsUrl = `${wsBase}/ws`;
     const ws = new WebSocket(wsUrl);
     
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        onMessage(data);
+        onMessage(normalizeWsEvent(data));
       } catch (error) {
         console.error('WebSocket message parse error:', error);
       }

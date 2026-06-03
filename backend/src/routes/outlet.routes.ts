@@ -1,9 +1,10 @@
 import { Elysia, t } from 'elysia';
 import { eq, and, desc } from 'drizzle-orm';
 import { pdus, outlets, outletStateHistory } from '../db/schema';
-import { OutletState } from '../utils/constants';
+import { deriveSnapshot } from '../utils/snapshot';
 import { logger } from '../utils/logger';
 import { WebSocketService } from '../services/websocket.service';
+import { withPduLock } from '../services/pdu-lock';
 
 export const outletRoutes = new Elysia({ prefix: '/pdus/:pduId/outlets' })
   .get('/', async ({ params, db }) => {
@@ -99,22 +100,25 @@ export const outletRoutes = new Elysia({ prefix: '/pdus/:pduId/outlets' })
     }
     
     try {
-      // Apply power state via SNMP
-      await snmpService.setOutletPower(
-        outlet.pdu,
-        outlet.outlet.outletNumber,
-        body.state
-      );
-      
-      // Update database
-      await db
-        .update(outlets)
-        .set({
-          actualState: body.state,
-          lastStateChange: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(outlets.id, params.outletId));
+      const snapshotState = deriveSnapshot(body.state);
+
+      await withPduLock(params.pduId, async () => {
+        await snmpService.setOutletPower(
+          outlet.pdu,
+          outlet.outlet.outletNumber,
+          body.state
+        );
+
+        await db
+          .update(outlets)
+          .set({
+            actualState: snapshotState,
+            desiredState: snapshotState,
+            lastStateChange: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(outlets.id, params.outletId));
+      });
       
       // Log state change
       await db.insert(outletStateHistory).values({
@@ -132,7 +136,7 @@ export const outletRoutes = new Elysia({ prefix: '/pdus/:pduId/outlets' })
         pduId: params.pduId,
         outletId: params.outletId,
         outletNumber: outlet.outlet.outletNumber,
-        newState: body.state,
+        newState: snapshotState,
       });
       
       logger.info({
@@ -143,7 +147,7 @@ export const outletRoutes = new Elysia({ prefix: '/pdus/:pduId/outlets' })
       
       return {
         success: true,
-        newState: body.state
+        newState: snapshotState
       };
     } catch (error: any) {
       logger.error({
@@ -178,46 +182,6 @@ export const outletRoutes = new Elysia({ prefix: '/pdus/:pduId/outlets' })
         t.Literal('on'),
         t.Literal('off'),
         t.Literal('reboot')
-      ])
-    })
-  })
-  
-  .post('/:outletId/desired-state', async ({ params, body, db }) => {
-    const [updated] = await db
-      .update(outlets)
-      .set({
-        desiredState: body.state,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(outlets.pduId, params.pduId),
-          eq(outlets.id, params.outletId)
-        )
-      )
-      .returning();
-    
-    if (!updated) {
-      throw new Error('Outlet not found');
-    }
-    
-    logger.info({
-      outlet: updated.outletNumber,
-      desiredState: body.state
-    }, 'Outlet desired state updated');
-    
-    return updated;
-  }, {
-    params: t.Object({
-      pduId: t.String({ format: 'uuid' }),
-      outletId: t.String({ format: 'uuid' })
-    }),
-    body: t.Object({
-      state: t.Union([
-        t.Literal('on'),
-        t.Literal('off'),
-        t.Literal('reboot'),
-        t.Null()
       ])
     })
   })
@@ -377,17 +341,21 @@ export const outletRoutes = new Elysia({ prefix: '/pdus/:pduId/outlets' })
     }
     
     try {
-      await snmpService.setAllOutlets(pdu, body.operation);
-      
-      // Update all outlets in database
-      await db
-        .update(outlets)
-        .set({
-          actualState: body.operation,
-          lastStateChange: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(outlets.pduId, params.pduId));
+      const snapshotState = deriveSnapshot(body.operation);
+
+      await withPduLock(params.pduId, async () => {
+        await snmpService.setAllOutlets(pdu, body.operation);
+
+        await db
+          .update(outlets)
+          .set({
+            actualState: snapshotState,
+            desiredState: snapshotState,
+            lastStateChange: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(outlets.pduId, params.pduId));
+      });
       
       // Broadcast WebSocket event
       const wsService = WebSocketService.getInstance();

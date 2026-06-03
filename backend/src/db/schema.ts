@@ -33,8 +33,8 @@ export const outlets = pgTable('outlets', {
   name: text('name'),
   description: text('description'),
   displayOrder: integer('display_order'),
-  desiredState: text('desired_state'), // 'on', 'off', 'reboot'
-  actualState: text('actual_state'), // 'on', 'off', 'reboot'
+  desiredState: text('desired_state'), // Restore snapshot: 'on' or 'off'
+  actualState: text('actual_state'), // Last observed state: 'on' or 'off'
   lastStateChange: timestamp('last_state_change', { withTimezone: true }),
   isCritical: boolean('is_critical').default(false),
   autoRecovery: boolean('auto_recovery').default(true),
@@ -56,7 +56,7 @@ export const outletStateHistory = pgTable('outlet_state_history', {
   outletId: uuid('outlet_id').notNull().references(() => outlets.id, { onDelete: 'cascade' }),
   previousState: text('previous_state'),
   newState: text('new_state'),
-  changeType: text('change_type'), // 'manual', 'auto_recovery', 'pdu_reboot', 'sync'
+  changeType: text('change_type'), // 'manual', 'auto_recovery', 'pdu_reboot', 'sync', 'scheduled'
   initiatedBy: text('initiated_by'),
   timestamp: timestamp('timestamp', { withTimezone: true }).defaultNow(),
   success: boolean('success').default(false),
@@ -72,7 +72,7 @@ export const outletStateHistory = pgTable('outlet_state_history', {
 export const pduEvents = pgTable('pdu_events', {
   id: uuid('id').primaryKey().defaultRandom(),
   pduId: uuid('pdu_id').notNull().references(() => pdus.id, { onDelete: 'cascade' }),
-  eventType: text('event_type').notNull(), // 'reboot', 'connection_lost', 'connection_restored', 'state_skew'
+  eventType: text('event_type').notNull(), // 'reboot', 'connection_lost', 'connection_restored', 'recovery_complete', 'state_skew'
   description: text('description'),
   metadata: jsonb('metadata'),
   timestamp: timestamp('timestamp', { withTimezone: true }).defaultNow(),

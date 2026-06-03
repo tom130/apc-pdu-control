@@ -19,7 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { pduApi } from '@/api/pdu';
-import type { Outlet, OutletState } from '@/types/pdu';
+import type { Outlet, OutletOperation } from '@/types/pdu';
 
 interface OutletScheduleDialogProps {
   outlet: Outlet;
@@ -34,11 +34,11 @@ export function OutletScheduleDialog({ outlet, open, onOpenChange }: OutletSched
   // Cron form state
   const [cronName, setCronName] = useState('');
   const [cronExpression, setCronExpression] = useState('');
-  const [cronOperation, setCronOperation] = useState<OutletState>('off');
+  const [cronOperation, setCronOperation] = useState<OutletOperation>('off');
 
   // One-time form state
   const [oneTimeDate, setOneTimeDate] = useState('');
-  const [oneTimeOperation, setOneTimeOperation] = useState<OutletState>('off');
+  const [oneTimeOperation, setOneTimeOperation] = useState<OutletOperation>('off');
 
   // Fetch schedules
   const { data: schedules, isLoading } = useQuery({
@@ -234,7 +234,7 @@ export function OutletScheduleDialog({ outlet, open, onOpenChange }: OutletSched
               </div>
               <div className="space-y-2">
                 <Label>Operation</Label>
-                <Select value={cronOperation} onValueChange={(v) => setCronOperation(v as OutletState)}>
+                <Select value={cronOperation} onValueChange={(v) => setCronOperation(v as OutletOperation)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -318,7 +318,7 @@ export function OutletScheduleDialog({ outlet, open, onOpenChange }: OutletSched
               </div>
               <div className="space-y-2">
                 <Label>Operation</Label>
-                <Select value={oneTimeOperation} onValueChange={(v) => setOneTimeOperation(v as OutletState)}>
+                <Select value={oneTimeOperation} onValueChange={(v) => setOneTimeOperation(v as OutletOperation)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

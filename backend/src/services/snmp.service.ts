@@ -20,6 +20,7 @@ interface PowerMetrics {
 
 export class SNMPService {
   private sessions = new Map<string, any>();
+  private probeFailures = new Map<string, number>();
   private timeout: number;
   private retries: number;
   private prometheusService: PrometheusService | null = null;
@@ -154,6 +155,29 @@ export class SNMPService {
             firmware: varbinds[3]?.value?.toString(),
           });
         }
+      });
+    });
+  }
+
+  async probeReachable(pdu: PDU): Promise<void> {
+    const session = this.getOrCreateSession(pdu, true);
+
+    return new Promise((resolve, reject) => {
+      session.get([SNMP_OIDS.rPDUIdentName], (error: any) => {
+        if (error) {
+          const failures = (this.probeFailures.get(pdu.id) ?? 0) + 1;
+          this.probeFailures.set(pdu.id, failures);
+
+          if (failures >= 2) {
+            this.closeSession(pdu.id);
+          }
+
+          reject(error);
+          return;
+        }
+
+        this.probeFailures.delete(pdu.id);
+        resolve();
       });
     });
   }
@@ -371,7 +395,12 @@ export class SNMPService {
           // Done callback
           if (error) {
             logger.debug({ error: error.message, oid }, 'Walk completed with error');
-            // Don't reject on walk error, just return what we have
+            if (error.name === 'RequestTimedOutError') {
+              reject(error);
+              return;
+            }
+
+            // Don't reject on partial/unsupported subtree walk errors, just return what we have.
             resolve(results);
           } else {
             resolve(results);
@@ -382,11 +411,14 @@ export class SNMPService {
   }
 
   closeSession(pduId: string): void {
-    const session = this.sessions.get(pduId);
-    if (session) {
-      session.close();
-      this.sessions.delete(pduId);
+    for (const sessionKey of [pduId, `${pduId}-read`]) {
+      const session = this.sessions.get(sessionKey);
+      if (session) {
+        session.close();
+        this.sessions.delete(sessionKey);
+      }
     }
+    this.probeFailures.delete(pduId);
   }
 
   closeAllSessions(): void {

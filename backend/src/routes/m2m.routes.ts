@@ -2,7 +2,9 @@ import { Elysia, t } from 'elysia';
 import { eq } from 'drizzle-orm';
 import { outlets, pdus, outletStateHistory } from '../db/schema';
 import { logger } from '../utils/logger';
+import { deriveSnapshot } from '../utils/snapshot';
 import { WebSocketService } from '../services/websocket.service';
+import { withPduLock } from '../services/pdu-lock';
 import { m2mAuth } from '../middleware/m2m-auth';
 
 export const m2mRoutes = new Elysia({ prefix: '/m2m' })
@@ -93,20 +95,25 @@ async function controlOutlet(
   }
 
   try {
-    await snmpService.setOutletPower(
-      outlet.pdu,
-      outlet.outlet.outletNumber,
-      state
-    );
+    const snapshotState = deriveSnapshot(state);
 
-    await db
-      .update(outlets)
-      .set({
-        actualState: state,
-        lastStateChange: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(outlets.id, outletId));
+    await withPduLock(outlet.pdu.id, async () => {
+      await snmpService.setOutletPower(
+        outlet.pdu,
+        outlet.outlet.outletNumber,
+        state
+      );
+
+      await db
+        .update(outlets)
+        .set({
+          actualState: snapshotState,
+          desiredState: snapshotState,
+          lastStateChange: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(outlets.id, outletId));
+    });
 
     await db.insert(outletStateHistory).values({
       outletId: outletId,
@@ -122,7 +129,7 @@ async function controlOutlet(
       pduId: outlet.pdu.id,
       outletId: outletId,
       outletNumber: outlet.outlet.outletNumber,
-      newState: state,
+      newState: snapshotState,
     });
 
     logger.info({
@@ -137,7 +144,7 @@ async function controlOutlet(
       outlet: {
         id: outletId,
         name: outlet.outlet.name,
-        state: state,
+        state: snapshotState,
       },
     };
   } catch (error: any) {

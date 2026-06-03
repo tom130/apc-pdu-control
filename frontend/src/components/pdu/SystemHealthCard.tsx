@@ -82,7 +82,7 @@ export function SystemHealthCard() {
               }`} />
             </div>
             <div>
-              <p className="text-sm font-medium">State Skew</p>
+              <p className="text-sm font-medium">Restore Drift</p>
               <p className="text-2xl font-bold">{systemHealth.stateSkewPercentage.toFixed(1)}%</p>
             </div>
           </div>

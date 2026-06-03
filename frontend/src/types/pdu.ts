@@ -1,6 +1,7 @@
-export type OutletState = 'on' | 'off' | 'reboot';
+export type OutletState = 'on' | 'off';
+export type OutletOperation = OutletState | 'reboot';
 export type LoadState = 'normal' | 'low' | 'near_overload' | 'overload';
-export type EventType = 'reboot' | 'connection_lost' | 'connection_restored' | 'state_skew';
+export type EventType = 'connection_lost' | 'connection_restored' | 'recovery_complete' | 'state_skew';
 export type ChangeType = 'manual' | 'auto_recovery' | 'pdu_reboot' | 'sync' | 'scheduled';
 export type SecurityLevel = 'noAuthNoPriv' | 'authNoPriv' | 'authPriv';
 
@@ -27,7 +28,7 @@ export interface Outlet {
   name?: string;
   description?: string;
   displayOrder?: number;
-  desiredState?: OutletState;
+  desiredState?: OutletState; // Legacy API field: restore snapshot, not a user target.
   actualState?: OutletState;
   lastStateChange?: Date;
   isCritical: boolean;
@@ -39,8 +40,8 @@ export interface Outlet {
 export interface OutletStateHistory {
   id: string;
   outletId: string;
-  previousState?: OutletState;
-  newState?: OutletState;
+  previousState?: OutletOperation;
+  newState?: OutletOperation;
   changeType: ChangeType;
   initiatedBy: string;
   timestamp: Date;
@@ -70,7 +71,7 @@ export interface PowerMetrics {
 export interface ScheduledOperation {
   id: string;
   outletId: string;
-  operation: OutletState;
+  operation: OutletOperation;
   scheduledTime: Date;
   executed: boolean;
   createdAt: Date;
@@ -81,7 +82,7 @@ export interface CronSchedule {
   outletId: string;
   name: string;
   cronExpression: string;
-  operation: OutletState;
+  operation: OutletOperation;
   isActive: boolean;
   lastExecutedAt: Date | null;
   nextRunAt: Date | null;
@@ -102,15 +103,6 @@ export interface SNMPConfig {
   privacyPassphrase: string;
   privacyProtocol: string;
   securityLevel: SecurityLevel;
-}
-
-export interface StateReconciliation {
-  pduId: string;
-  totalOutlets: number;
-  syncedOutlets: number;
-  skewedOutlets: number;
-  lastSync: Date;
-  isReconciling: boolean;
 }
 
 export interface SystemHealth {

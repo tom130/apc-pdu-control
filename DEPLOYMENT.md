@@ -68,9 +68,12 @@ The database schema is automatically initialized on first run from:
 
 This includes:
 - PDU and outlet tables
+- Outlet history and event logging
 - Power metrics tracking
-- Event logging
-- Display order support for outlet reorganization
+- One-time and cron outlet schedules
+- M2M API keys
+
+`backend/database/schema.sql` is the single Docker fresh-install bootstrap artifact and is kept in parity with `backend/src/db/schema.ts`.
 
 ## Deployment Options
 

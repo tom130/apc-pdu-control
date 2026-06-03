@@ -13,7 +13,7 @@ import {
   Save,
   X
 } from 'lucide-react';
-import { Outlet, OutletState } from '@/types/pdu';
+import { Outlet, OutletOperation } from '@/types/pdu';
 import { useMutation } from '@tanstack/react-query';
 import { pduApi } from '@/api/pdu';
 import usePDUStore from '@/store/pduStore';
@@ -70,10 +70,21 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
   );
 
   const powerMutation = useMutation({
-    mutationFn: ({ outletId, state }: { outletId: string; state: OutletState }) =>
+    mutationFn: ({ outletId, state }: { outletId: string; state: OutletOperation }) =>
       pduApi.setOutletPower(pduId, outletId, state),
     onSuccess: (data, variables) => {
-      updateOutlet(pduId, variables.outletId, { actualState: data.newState });
+      updateOutlet(pduId, variables.outletId, {
+        actualState: data.newState,
+        desiredState: data.newState,
+      });
+    },
+  });
+
+  const flagMutation = useMutation({
+    mutationFn: ({ outletId, updates }: { outletId: string; updates: Partial<Outlet> }) =>
+      pduApi.updateOutlet(pduId, outletId, updates),
+    onSuccess: (data) => {
+      updateOutlet(pduId, data.id, data);
     },
   });
 
@@ -97,7 +108,7 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
   });
 
   const handleOutletToggle = (outlet: Outlet) => {
-    const newState: OutletState = outlet.actualState === 'on' ? 'off' : 'on';
+    const newState: OutletOperation = outlet.actualState === 'on' ? 'off' : 'on';
     powerMutation.mutate({ outletId: outlet.id, state: newState });
   };
 
@@ -105,7 +116,7 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
     powerMutation.mutate({ outletId: outlet.id, state: 'reboot' });
   };
 
-  const handleBulkOperation = (operation: OutletState) => {
+  const handleBulkOperation = (operation: OutletOperation) => {
     selectedOutlets.forEach((outletId) => {
       powerMutation.mutate({ outletId, state: operation });
     });
@@ -292,7 +303,14 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
                   onReboot={() => handleOutletReboot(outlet)}
                   onSchedule={() => setScheduleOutlet(outlet)}
                   onSelect={() => toggleOutletSelection(outlet.id)}
+                  onAutoRecoveryChange={(autoRecovery) =>
+                    flagMutation.mutate({ outletId: outlet.id, updates: { autoRecovery } })
+                  }
+                  onCriticalChange={(isCritical) =>
+                    flagMutation.mutate({ outletId: outlet.id, updates: { isCritical } })
+                  }
                   isLoading={powerMutation.isPending}
+                  isUpdatingFlags={flagMutation.isPending}
                   isReorganizing={isReorganizing}
                 />
               ))}
@@ -307,7 +325,10 @@ export function OutletGrid({ pduId, outlets }: OutletGridProps) {
                   onToggle={() => {}}
                   onReboot={() => {}}
                   onSelect={() => {}}
+                  onAutoRecoveryChange={() => {}}
+                  onCriticalChange={() => {}}
                   isLoading={false}
+                  isUpdatingFlags={false}
                   isReorganizing={true}
                 />
               </div>

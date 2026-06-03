@@ -1,11 +1,18 @@
-import { eq, and, ne, isNotNull, gte } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { PDU, Outlet, outlets, outletStateHistory, pduEvents } from '../db/schema';
+import { PDU, outlets, outletStateHistory, pduEvents } from '../db/schema';
 import { SNMPService } from './snmp.service';
 import { PrometheusService } from './prometheus.service';
-import { OutletState, ChangeType } from '../utils/constants';
+import { ChangeType } from '../utils/constants';
+import { deriveSnapshot } from '../utils/snapshot';
+import { shouldRestore } from './restore-predicate';
+import { withPduLock } from './pdu-lock';
 import { logger } from '../utils/logger';
 import { WebSocketService } from './websocket.service';
+
+interface UpdateOutletStatesOptions {
+  captureSnapshot?: boolean;
+}
 
 export class StateManager {
   private wsService: WebSocketService | null = null;
@@ -15,7 +22,7 @@ export class StateManager {
     private db: PostgresJsDatabase<any>,
     private snmpService: SNMPService
   ) {}
-  
+
   private getPrometheusService(): PrometheusService {
     if (!this.prometheusService) {
       this.prometheusService = PrometheusService.getInstance();
@@ -27,236 +34,14 @@ export class StateManager {
     this.wsService = wsService;
   }
 
-  async reconcileStates(pdu: PDU): Promise<{ reconciled: number; failed: number }> {
-    logger.info({ pdu: pdu.name }, 'Starting state reconciliation');
-    
-    let reconciled = 0;
-    let failed = 0;
+  async updateOutletStates(pdu: PDU, states: any[], options: UpdateOutletStatesOptions = {}): Promise<void> {
+    const captureSnapshot = options.captureSnapshot ?? true;
 
-    try {
-      // Get outlets with state skew
-      const skewedOutlets = await this.db
-        .select()
-        .from(outlets)
-        .where(
-          and(
-            eq(outlets.pduId, pdu.id),
-            isNotNull(outlets.desiredState),
-            ne(outlets.desiredState, outlets.actualState)
-          )
-        );
-
-      for (const outlet of skewedOutlets) {
-        try {
-          await this.applyDesiredState(pdu, outlet);
-          reconciled++;
-        } catch (error) {
-          logger.error({ error, outlet: outlet.outletNumber }, 'Failed to reconcile outlet');
-          failed++;
-        }
-      }
-
-      logger.info({ pdu: pdu.name, reconciled, failed }, 'State reconciliation complete');
-    } catch (error) {
-      logger.error({ error, pdu: pdu.name }, 'State reconciliation failed');
-    }
-
-    return { reconciled, failed };
-  }
-
-  async applyDesiredState(pdu: PDU, outlet: Outlet): Promise<boolean> {
-    if (!outlet.desiredState) return false;
-
-    try {
-      // Apply the state via SNMP
-      await this.snmpService.setOutletPower(pdu, outlet.outletNumber, outlet.desiredState as OutletState);
-      
-      // Update the database
-      await this.db
-        .update(outlets)
-        .set({
-          actualState: outlet.desiredState,
-          lastStateChange: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(outlets.id, outlet.id));
-
-      // Log the state change
-      await this.logStateChange(
-        outlet.id,
-        outlet.actualState,
-        outlet.desiredState,
-        'sync',
-        'system'
-      );
-      
-      // Record Prometheus metric
-      this.getPrometheusService().recordStateChange(
-        pdu,
-        outlet,
-        'sync',
-        outlet.actualState || 'unknown',
-        outlet.desiredState
-      );
-
-      // Emit WebSocket event
-      if (this.wsService) {
-        this.wsService.broadcast('outlet:state-changed', {
-          pduId: pdu.id,
-          outletId: outlet.id,
-          outletNumber: outlet.outletNumber,
-          newState: outlet.desiredState,
-        });
-      }
-
-      return true;
-    } catch (error) {
-      logger.error({ error, outlet: outlet.outletNumber }, 'Failed to apply desired state');
-      
-      await this.logStateChange(
-        outlet.id,
-        outlet.actualState,
-        outlet.desiredState,
-        'sync',
-        'system',
-        false,
-        error instanceof Error ? error.message : 'Unknown error'
-      );
-      
-      return false;
-    }
-  }
-
-  async detectReboot(pdu: PDU): Promise<boolean> {
-    try {
-      // Check if many outlets changed state recently
-      const recentChanges = await this.db
-        .select()
-        .from(outlets)
-        .where(
-          and(
-            eq(outlets.pduId, pdu.id),
-            gte(outlets.lastStateChange, new Date(Date.now() - 120000)) // Last 2 minutes
-          )
-        );
-
-      const totalOutlets = await this.db
-        .select()
-        .from(outlets)
-        .where(eq(outlets.pduId, pdu.id));
-
-      // If more than 80% of outlets changed state recently, likely a reboot
-      const rebootDetected = recentChanges.length > totalOutlets.length * 0.8;
-
-      if (rebootDetected) {
-        logger.warn({ pdu: pdu.name }, 'PDU reboot detected');
-        
-        // Log the event
-        await this.db.insert(pduEvents).values({
-          pduId: pdu.id,
-          eventType: 'reboot',
-          description: 'PDU reboot detected - multiple outlets changed state simultaneously',
-          metadata: { affectedOutlets: recentChanges.length },
-        });
-
-        // Emit WebSocket event
-        if (this.wsService) {
-          this.wsService.broadcast('pdu:reboot-detected', {
-            pduId: pdu.id,
-            pduName: pdu.name,
-          });
-        }
-      }
-
-      return rebootDetected;
-    } catch (error) {
-      logger.error({ error, pdu: pdu.name }, 'Failed to detect reboot');
-      return false;
-    }
-  }
-
-  async recoverFromReboot(pdu: PDU): Promise<{ recovered: number; failed: number }> {
-    logger.info({ pdu: pdu.name }, 'Starting reboot recovery');
-    
-    // Wait for PDU to stabilize
-    await Bun.sleep(60000); // 60 seconds
-    
-    let recovered = 0;
-    let failed = 0;
-
-    try {
-      // Get critical outlets first
-      const criticalOutlets = await this.db
-        .select()
-        .from(outlets)
-        .where(
-          and(
-            eq(outlets.pduId, pdu.id),
-            eq(outlets.isCritical, true),
-            isNotNull(outlets.desiredState),
-            eq(outlets.autoRecovery, true)
-          )
-        );
-
-      // Apply critical outlet states first
-      for (const outlet of criticalOutlets) {
-        try {
-          await this.applyDesiredState(pdu, outlet);
-          recovered++;
-          await Bun.sleep(2000); // 2 second delay between critical outlets
-        } catch (error) {
-          logger.error({ error, outlet: outlet.outletNumber }, 'Failed to recover critical outlet');
-          failed++;
-        }
-      }
-
-      // Then handle non-critical outlets
-      const nonCriticalOutlets = await this.db
-        .select()
-        .from(outlets)
-        .where(
-          and(
-            eq(outlets.pduId, pdu.id),
-            eq(outlets.isCritical, false),
-            isNotNull(outlets.desiredState),
-            eq(outlets.autoRecovery, true)
-          )
-        );
-
-      for (const outlet of nonCriticalOutlets) {
-        try {
-          await this.applyDesiredState(pdu, outlet);
-          recovered++;
-          await Bun.sleep(1000); // 1 second delay between non-critical outlets
-        } catch (error) {
-          logger.error({ error, outlet: outlet.outletNumber }, 'Failed to recover outlet');
-          failed++;
-        }
-      }
-
-      logger.info({ pdu: pdu.name, recovered, failed }, 'Reboot recovery complete');
-      
-      // Log recovery event
-      await this.db.insert(pduEvents).values({
-        pduId: pdu.id,
-        eventType: 'connection_restored',
-        description: `Recovery complete: ${recovered} outlets recovered, ${failed} failed`,
-        metadata: { recovered, failed },
-      });
-
-    } catch (error) {
-      logger.error({ error, pdu: pdu.name }, 'Reboot recovery failed');
-    }
-
-    return { recovered, failed };
-  }
-
-  async updateOutletStates(pdu: PDU, states: any[]): Promise<void> {
     for (const state of states) {
       const outletNumber = state.outletNumber;
       const newState = state.state;
+      const snapshotState = deriveSnapshot(newState);
 
-      // Get the outlet from database
       const [outlet] = await this.db
         .select()
         .from(outlets)
@@ -269,21 +54,14 @@ export class StateManager {
         .limit(1);
 
       if (outlet) {
-        // Check if state changed
-        if (outlet.actualState !== newState) {
+        const updates: Record<string, any> = {};
+        const stateChanged = outlet.actualState !== newState;
+
+        if (stateChanged) {
           const previousState = outlet.actualState;
-          
-          // Update the state
-          await this.db
-            .update(outlets)
-            .set({
-              actualState: newState,
-              lastStateChange: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(outlets.id, outlet.id));
-          
-          // Record state change in Prometheus
+          updates.actualState = newState;
+          updates.lastStateChange = new Date();
+
           this.getPrometheusService().recordStateChange(
             pdu,
             outlet,
@@ -291,39 +69,129 @@ export class StateManager {
             previousState || 'unknown',
             newState
           );
+        }
 
-          // Check for state skew
-          if (outlet.desiredState && outlet.desiredState !== newState) {
-            logger.warn({
-              outlet: outletNumber,
-              desired: outlet.desiredState,
-              actual: newState,
-            }, 'State skew detected');
+        if (captureSnapshot && outlet.desiredState !== snapshotState) {
+          updates.desiredState = snapshotState;
+        }
 
-            // Emit skew alert
-            if (this.wsService) {
-              this.wsService.broadcast('outlet:state-skew', {
-                pduId: pdu.id,
-                outletId: outlet.id,
-                outletNumber: outlet.outletNumber,
-                desiredState: outlet.desiredState,
-                actualState: newState,
-              });
-            }
-          }
+        if (Object.keys(updates).length > 0) {
+          await this.db
+            .update(outlets)
+            .set({
+              ...updates,
+              updatedAt: new Date(),
+            })
+            .where(eq(outlets.id, outlet.id));
         }
       } else {
-        // Create new outlet entry
         await this.db.insert(outlets).values({
           pduId: pdu.id,
           outletNumber,
           name: state.name || `Outlet ${outletNumber}`,
-          displayOrder: outletNumber, // Set initial display order to match outlet number
+          displayOrder: outletNumber,
           actualState: newState,
+          desiredState: snapshotState,
           lastStateChange: new Date(),
         });
       }
     }
+  }
+
+  async restoreFromPowerLoss(pdu: PDU): Promise<{ recovered: number; failed: number }> {
+    logger.info({ pdu: pdu.name }, 'Starting power-loss restore');
+
+    let recovered = 0;
+    let failed = 0;
+
+    try {
+      const pduOutlets = await this.db
+        .select()
+        .from(outlets)
+        .where(eq(outlets.pduId, pdu.id));
+
+      const outletsToRestore = pduOutlets
+        .filter(shouldRestore)
+        .sort((a, b) => {
+          const criticalOrder = Number(b.isCritical === true) - Number(a.isCritical === true);
+          return criticalOrder || a.outletNumber - b.outletNumber;
+        });
+
+      for (const outlet of outletsToRestore) {
+        const snapshotState = outlet.desiredState as 'on' | 'off';
+        const previousState = outlet.actualState;
+
+        try {
+          await withPduLock(pdu.id, async () => {
+            await this.snmpService.setOutletPower(pdu, outlet.outletNumber, snapshotState);
+
+            await this.db
+              .update(outlets)
+              .set({
+                actualState: snapshotState,
+                lastStateChange: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(outlets.id, outlet.id));
+          });
+
+          await this.logStateChange(
+            outlet.id,
+            previousState,
+            snapshotState,
+            'pdu_reboot',
+            'system'
+          );
+
+          this.getPrometheusService().recordStateChange(
+            pdu,
+            outlet,
+            'pdu_reboot',
+            previousState || 'unknown',
+            snapshotState
+          );
+
+          if (this.wsService) {
+            this.wsService.broadcast('outlet:state-changed', {
+              pduId: pdu.id,
+              outletId: outlet.id,
+              outletNumber: outlet.outletNumber,
+              newState: snapshotState,
+            }, `pdu:${pdu.id}`);
+          }
+
+          recovered++;
+          await Bun.sleep(outlet.isCritical ? 2000 : 1000);
+        } catch (error) {
+          failed++;
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          logger.error({ error: errorMessage, outlet: outlet.outletNumber }, 'Failed to restore outlet after power loss');
+
+          await this.logStateChange(
+            outlet.id,
+            previousState,
+            snapshotState,
+            'pdu_reboot',
+            'system',
+            false,
+            errorMessage
+          );
+        }
+      }
+
+      await this.db.insert(pduEvents).values({
+        pduId: pdu.id,
+        eventType: 'recovery_complete',
+        description: `Power-loss restore complete: ${recovered} outlets restored, ${failed} failed`,
+        metadata: { recovered, failed },
+      });
+
+      logger.info({ pdu: pdu.name, recovered, failed }, 'Power-loss restore complete');
+    } catch (error) {
+      logger.error({ error, pdu: pdu.name }, 'Power-loss restore failed');
+    }
+
+    return { recovered, failed };
   }
 
   private async logStateChange(
@@ -344,18 +212,5 @@ export class StateManager {
       success,
       errorMessage,
     });
-  }
-
-  async calculateStateSkew(pduId: string): Promise<number> {
-    const allOutlets = await this.db
-      .select()
-      .from(outlets)
-      .where(eq(outlets.pduId, pduId));
-
-    const skewedOutlets = allOutlets.filter(
-      outlet => outlet.desiredState && outlet.desiredState !== outlet.actualState
-    );
-
-    return allOutlets.length > 0 ? (skewedOutlets.length / allOutlets.length) * 100 : 0;
   }
 }

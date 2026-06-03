@@ -12,7 +12,7 @@ export function Header() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   
   const activePdus = Array.isArray(pdus) ? pdus.filter(p => p.isActive).length : 0;
-  const hasSkew = systemHealth && systemHealth.stateSkewPercentage > 10;
+  const hasRestoreDrift = systemHealth && systemHealth.stateSkewPercentage > 10;
 
   const toggleTheme = () => {
     if (theme === 'light') setTheme('dark');
@@ -44,11 +44,11 @@ export function Header() {
                 </span>
               </div>
               
-              {hasSkew && (
+              {hasRestoreDrift && (
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-yellow-500" />
                   <span className="text-sm">
-                    State Skew: <Badge variant="warning">{systemHealth.stateSkewPercentage.toFixed(1)}%</Badge>
+                    Restore Drift: <Badge variant="warning">{systemHealth.stateSkewPercentage.toFixed(1)}%</Badge>
                   </span>
                 </div>
               )}

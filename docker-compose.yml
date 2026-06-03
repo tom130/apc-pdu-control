@@ -39,10 +39,10 @@ services:
       # SNMP Configuration
       SNMP_TIMEOUT: 5000
       SNMP_RETRIES: 3
-      # State Management
-      STATE_RECONCILIATION_INTERVAL: 30000
-      PDU_POLLING_INTERVAL: 10000
-      REBOOT_DETECTION_THRESHOLD: 5
+      # Scheduler and metrics intervals
+      POLL_INTERVAL: 30000
+      SCHEDULE_CHECK_INTERVAL: 60000
+      METRICS_INTERVAL: 300000
       # Encryption key (32 characters)
       ENCRYPTION_KEY: "ThisIsA32CharacterEncryptionKey!"
     depends_on:
